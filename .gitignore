@@ -125,3 +125,7 @@ dmypy.json
 
 # User-specific ignores
 notes/
+
+# databases
+data/*.db
+logs/*.log

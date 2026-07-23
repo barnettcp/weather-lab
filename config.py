@@ -4,6 +4,9 @@ Edit LATITUDE / LONGITUDE / TIMEZONE for your actual location.
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()  # load .env file if present, so we can override config values
 
 # --- Location -------------------------------------------------------------
 # Mountlake Terrace Transit Station
@@ -27,7 +30,10 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 # --- NWS (api.weather.gov) settings -----------------------------------------
 NWS_BASE_URL = "https://api.weather.gov"
 # NWS requires a descriptive User-Agent with contact info per their API rules.
-NWS_USER_AGENT = "weather-bias-tracker (replace-with-your-email@example.com)"
+NWS_USER_AGENT = os.environ.get(
+    "NWS_USER_AGENT",
+    "weather-lab-ml (no-contact-provided@example.com)"
+)
 
 # How far back to look each time we fetch actuals. NWS stations report every
 # ~20-60 minutes, so pulling the last 2 days each run keeps things resilient
