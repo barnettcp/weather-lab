@@ -6,8 +6,8 @@ Edit LATITUDE / LONGITUDE / TIMEZONE for your actual location.
 import os
 
 # --- Location -------------------------------------------------------------
-# Defaults to Lynnwood, WA. Change these to your Pi's actual location.
-LATITUDE = 47.8209
+# Mountlake Terrace Transit Station
+LATITUDE = 47.7856
 LONGITUDE = -122.3151
 TIMEZONE = "America/Los_Angeles"  # IANA tz name, used for the dashboard only;
                                   # all DB timestamps are stored in UTC.
