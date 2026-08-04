@@ -135,8 +135,8 @@ with tab_dist:
         lead_df["lead_bucket_label"] = lead_df["lead_bucket"].apply(
             lambda h: f"{h}-{h + bin_hours}h"
         )
-        order = sorted(lead_df["lead_bucket_label"].unique(),
-                        key=lambda s: int(s.split("-")[0]))
+        # Sort by numeric lead_bucket values, then create ordered labels
+        order = [f"{h}-{h + bin_hours}h" for h in sorted(lead_df["lead_bucket"].unique())]
         fig_box = px.box(
             lead_df, x="lead_bucket_label", y="error_c",
             category_orders={"lead_bucket_label": order},
