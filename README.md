@@ -63,6 +63,8 @@ All settings live in `config.py`:
 requests >= 2.31
 pandas >= 2.0
 streamlit >= 1.35
+plotly >= 5.20
+python-dotenv >= 1.0
 ```
 
 Install into a virtual environment:
@@ -102,17 +104,12 @@ streamlit run dashboard.py --server.address 0.0.0.0
 
 ## Scheduling (Raspberry Pi / Linux)
 
-Example crontab (`crontab -e`) for continuous collection:
+This project uses **systemd timers** for automated data collection:
 
-```cron
-# Forecast: 4 snapshots per day to capture lead-time evolution
-0 0,6,12,18 * * * cd /home/pi/weather-lab && venv/bin/python3 fetch_forecast.py >> logs/forecast.log 2>&1
+- **weather-forecast.timer** — runs 4 times daily (03:00, 09:00, 15:00, 21:00) to capture forecast snapshots at different lead times
+- **weather-actuals.timer** — runs once daily (03:00) to backfill the rolling 48-hour observation window
 
-# Actuals: once daily, rolling 48-hour backfill
-15 3 * * * cd /home/pi/weather-lab && venv/bin/python3 fetch_actuals.py >> logs/actuals.log 2>&1
-```
-
-Create the log directory first: `mkdir -p logs`.
+For complete setup instructions including service file configuration and installation, see [SYSTEMD_SETUP.md](SYSTEMD_SETUP.md).
 
 ---
 
