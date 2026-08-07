@@ -1,0 +1,11 @@
+[Unit]
+Description=Run weather-actuals.service once daily
+
+[Timer]
+# Once daily at 0300
+OnCalendar=*-*-* 03:00:00
+# Persistent means catch up on missed runs after system downtime
+Persistent=true
+
+[Install]
+WantedBy=timers.target

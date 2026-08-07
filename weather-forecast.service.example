@@ -1,0 +1,15 @@
+[Unit]
+Description=Fetch Open-Meteo forecast snapshot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/your/weather-lab
+ExecStart=/path/to/your/weather-lab/venv/bin/python fetch_forecast.py
+StandardOutput=append:/path/to/your/weather-lab/logs/forecast.log
+StandardError=append:/path/to/your/weather-lab/logs/forecast.log
+
+
+

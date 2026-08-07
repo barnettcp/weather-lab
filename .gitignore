@@ -131,7 +131,9 @@ data/*.db
 logs/*.log
 
 # systemd service files with actual paths/credentials
-*.service
-*.timer
+weather-forecast.service
+weather-forecast.timer
+weather-actuals.service
+weather-actuals.timer
 !*.service.example
 !*.timer.example

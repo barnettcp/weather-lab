@@ -1,14 +1,9 @@
 [Unit]
-Description=Weather Data Fetch Timer
-Requires=weather-fetch.service
+Description=Run weather-forecast.service four times daily
 
 [Timer]
 # Four times daily, 0300, 0900, 1500, and 2100
 OnCalendar=*-*-* 03,09,15,21:00:00
-# Run 5 minutes after boot if missed
-OnBootSec=5min
-# Allow some variance to reduce server load
-RandomizedDelaySec=2min
 # Persistent means catch up on missed runs after system downtime
 Persistent=true
 

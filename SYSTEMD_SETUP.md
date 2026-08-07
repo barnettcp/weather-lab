@@ -1,12 +1,20 @@
 # Systemd Service Setup
 
-This guide explains how to set up the systemd service and timer for automated weather data fetching.
+This guide explains how to set up the systemd services and timers for automated weather data fetching.
 
 ## Overview
 
-The weather-fetch service consists of two components:
-- **weather-fetch.service**: The service unit that runs the fetch scripts
-- **weather-fetch.timer**: The timer unit that schedules when the service runs
+The weather data collection uses **two separate service/timer pairs** with different schedules:
+
+### Forecast Service (4x daily)
+- **weather-forecast.service**: Fetches weather forecast snapshots from Open-Meteo API
+- **weather-forecast.timer**: Runs 4x daily at 3 AM, 9 AM, 3 PM, and 9 PM
+
+### Actuals Service (1x daily)
+- **weather-actuals.service**: Fetches actual weather observations from NWS
+- **weather-actuals.timer**: Runs once daily at 3 AM
+
+**Important:** Systemd automatically matches `foo.timer` → `foo.service` by name. You don't need to explicitly reference the service in the timer file.
 
 ## Setup Instructions
 
@@ -15,18 +23,25 @@ The weather-fetch service consists of two components:
 Copy the example files and customize them for your system:
 
 ```bash
-cp weather-fetch.service.example weather-fetch.service
-cp weather-fetch.timer.example weather-fetch.timer
+# Forecast service (4x daily)
+cp weather-forecast.service.example weather-forecast.service
+cp weather-forecast.timer.example weather-forecast.timer
+
+# Actuals service (1x daily)
+cp weather-actuals.service.example weather-actuals.service
+cp weather-actuals.timer.example weather-actuals.timer
 ```
 
-### 2. Edit the Service File
+### 2. Edit the Service Files
 
-Update `weather-fetch.service` with your actual values:
+Update both service files with your actual values:
 
 - Replace `YOUR_USERNAME` with your actual username
 - Replace `/path/to/your/weather-lab` with the actual path to this repository
-- Update the Python interpreter path if different
-- Add any environment variables or API keys needed
+- Update the Python interpreter path if different (e.g., `python3` vs `python`)
+- Verify the log file paths exist or will be created
+
+**Note:** Service files triggered by timers don't need an `[Install]` section - they're invoked by the timer, not enabled directly.
 
 ### 3. Install the Service (User-level)
 
@@ -36,19 +51,20 @@ For a user-level service (recommended):
 # Create systemd user directory if it doesn't exist
 mkdir -p ~/.config/systemd/user/
 
-# Copy service files
-cp weather-fetch.service ~/.config/systemd/user/
-cp weather-fetch.timer ~/.config/systemd/user/
+# Copy service and timer files
+cp weather-forecast.{service,timer} ~/.config/systemd/user/
+cp weather-actuals.{service,timer} ~/.config/systemd/user/
 
 # Reload systemd
 systemctl --user daemon-reload
 
-# Enable and start the timer
-systemctl --user enable weather-fetch.timer
-systemctl --user start weather-fetch.timer
+# Enable and start both timers
+systemctl --user enable weather-forecast.timer weather-actuals.timer
+systemctl --user start weather-forecast.timer weather-actuals.timer
 
 # Check status
-systemctl --user status weather-fetch.timer
+systemctl --user status weather-forecast.timer
+systemctl --user status weather-actuals.timer
 systemctl --user list-timers
 ```
 
@@ -57,19 +73,20 @@ systemctl --user list-timers
 For a system-level service (requires sudo):
 
 ```bash
-# Copy service files
-sudo cp weather-fetch.service /etc/systemd/system/
-sudo cp weather-fetch.timer /etc/systemd/system/
+# Copy service and timer files
+sudo cp weather-forecast.{service,timer} /etc/systemd/system/
+sudo cp weather-actuals.{service,timer} /etc/systemd/system/
 
 # Reload systemd
 sudo systemctl daemon-reload
 
-# Enable and start the timer
-sudo systemctl enable weather-fetch.timer
-sudo systemctl start weather-fetch.timer
+# Enable and start both timers
+sudo systemctl enable weather-forecast.timer weather-actuals.timer
+sudo systemctl start weather-forecast.timer weather-actuals.timer
 
 # Check status
-sudo systemctl status weather-fetch.timer
+sudo systemctl status weather-forecast.timer
+sudo systemctl status weather-actuals.timer
 systemctl list-timers
 ```
 
@@ -78,87 +95,114 @@ systemctl list-timers
 ### Check Service Status
 ```bash
 # User service
-systemctl --user status weather-fetch.service
-systemctl --user status weather-fetch.timer
+systemctl --user status weather-forecast.service
+systemctl --user status weather-forecast.timer
+systemctl --user status weather-actuals.service
+systemctl --user status weather-actuals.timer
 
 # System service
-sudo systemctl status weather-fetch.service
-sudo systemctl status weather-fetch.timer
+sudo systemctl status weather-forecast.service
+sudo systemctl status weather-forecast.timer
+sudo systemctl status weather-actuals.service
+sudo systemctl status weather-actuals.timer
 ```
 
 ### View Logs
 ```bash
-# User service
-journalctl --user -u weather-fetch.service -f
+# User service logs (from journalctl)
+journalctl --user -u weather-forecast.service -f
+journalctl --user -u weather-actuals.service -f
 
-# System service
-journalctl -u weather-fetch.service -f
+# System service logs (from journalctl)
+journalctl -u weather-forecast.service -f
+journalctl -u weather-actuals.service -f
+
+# Or check the log files directly
+tail -f logs/forecast.log
+tail -f logs/actuals.log
 
 # Show recent runs
-journalctl --user -u weather-fetch.service --since "1 hour ago"
+journalctl --user -u weather-forecast.service --since "1 hour ago"
 ```
 
-### Manually Run the Service
+### Manually Run the Services
 ```bash
 # User service
-systemctl --user start weather-fetch.service
+systemctl --user start weather-forecast.service
+systemctl --user start weather-actuals.service
 
 # System service
-sudo systemctl start weather-fetch.service
+sudo systemctl start weather-forecast.service
+sudo systemctl start weather-actuals.service
 ```
 
-### Stop/Disable the Timer
+### Stop/Disable the Timers
 ```bash
 # User service
-systemctl --user stop weather-fetch.timer
-systemctl --user disable weather-fetch.timer
+systemctl --user stop weather-forecast.timer weather-actuals.timer
+systemctl --user disable weather-forecast.timer weather-actuals.timer
 
 # System service
-sudo systemctl stop weather-fetch.timer
-sudo systemctl disable weather-fetch.timer
+sudo systemctl stop weather-forecast.timer weather-actuals.timer
+sudo systemctl disable weather-forecast.timer weather-actuals.timer
 ```
 
 ### Edit and Reload
 ```bash
 # After editing service files
 systemctl --user daemon-reload
-systemctl --user restart weather-fetch.timer
+systemctl --user restart weather-forecast.timer weather-actuals.timer
 ```
 
-## Timer Schedule
+## Timer Schedules
 
-The default timer runs:
-- Every hour at 5 minutes past the hour (e.g., 1:05, 2:05, 3:05)
-- 5 minutes after boot if the system was down during a scheduled run
-- With a random delay of 0-2 minutes to reduce server load
+### Forecast Timer (weather-forecast.timer)
+Runs **four times daily** at 3:00 AM, 9:00 AM, 3:00 PM, and 9:00 PM (03:00, 09:00, 15:00, 21:00) to capture forecast snapshots throughout the day.
 
-To customize the schedule, edit the `OnCalendar` value in the timer file:
-- `*:05:00` - Every hour at 5 minutes past
-- `*-*-* 06:00:00` - Daily at 6 AM
+### Actuals Timer (weather-actuals.timer)
+Runs **once daily** at 3:00 AM (03:00) since historical weather observations don't change frequently.
+
+### Customizing Schedules
+
+To customize the schedule, edit the `OnCalendar` value in the timer files:
+- `*-*-* 03,09,15,21:00:00` - Four times daily at 3 AM, 9 AM, 3 PM, 9 PM
+- `*-*-* 03:00:00` - Once daily at 3 AM
 - `*-*-* 06,12,18:00:00` - Three times daily at 6 AM, 12 PM, 6 PM
-- `hourly` - Every hour at the top of the hour
+- `*:00:00` - Every hour at the top of the hour
+- `hourly` - Every hour at the top of the hour (shorthand)
+
+Both timers use `Persistent=true` to catch up on missed runs after system downtime.
 
 ## Troubleshooting
 
-### Check if timer is active
+### Check if timers are active
 ```bash
-systemctl --user list-timers weather-fetch.timer
+systemctl --user list-timers weather-forecast.timer weather-actuals.timer
 ```
 
-### Check when the timer last ran and when it will run next
+### Check when timers last ran and when they will run next
 ```bash
-systemctl --user status weather-fetch.timer
+systemctl --user status weather-forecast.timer
+systemctl --user status weather-actuals.timer
 ```
 
 ### View detailed logs
 ```bash
-journalctl --user -u weather-fetch.service -n 50 --no-pager
+journalctl --user -u weather-forecast.service -n 50 --no-pager
+journalctl --user -u weather-actuals.service -n 50 --no-pager
+
+# Or check log files
+tail -n 50 logs/forecast.log
+tail -n 50 logs/actuals.log
 ```
 
-### Test the service manually
+### Test services manually
 ```bash
-systemctl --user start weather-fetch.service
-journalctl --user -u weather-fetch.service -f
+systemctl --user start weather-forecast.service
+journalctl --user -u weather-forecast.service -f
+
+systemctl --user start weather-actuals.service
+journalctl --user -u weather-actuals.service -f
 ```
 
 ### Verify paths and permissions
@@ -173,9 +217,10 @@ ls -la venv/bin/python
 ## Best Practices
 
 1. **Use user-level services** when possible to avoid requiring root privileges
-2. **Test manually first** before enabling the timer
-3. **Monitor logs** regularly to catch any issues
-4. **Use Persistent=true** in the timer to catch up on missed runs
-5. **Add RandomizedDelaySec** to avoid hammering APIs at exact intervals
-6. **Keep credentials in a separate .env file** and reference it with `EnvironmentFile=`
-7. **Never commit actual .service/.timer files** with real paths/credentials to version control
+2. **Test manually first** before enabling the timers
+3. **Monitor logs** regularly to catch any issues (both journalctl and log files)
+4. **Use Persistent=true** in timers to catch up on missed runs after system downtime
+5. **Separate services by schedule** - different update frequencies deserve different timers
+6. **Follow naming conventions** - `foo.timer` automatically triggers `foo.service` (no explicit reference needed)
+7. **Never commit actual .service/.timer files** with real paths/usernames to version control
+8. **Service files triggered by timers** don't need an `[Install]` section
