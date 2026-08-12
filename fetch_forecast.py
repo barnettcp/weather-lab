@@ -46,10 +46,14 @@ def to_rows(payload, fetched_at):
         target_time = datetime.fromisoformat(t).replace(tzinfo=timezone.utc)
         lead_hours = (target_time - fetched_at).total_seconds() / 3600.0
 
+        # Skip forecasts for times that have already passed (negative lead_hours)
+        if target_time <= fetched_at:
+            continue
+
         rows.append({
             "fetched_at": fetched_at.isoformat(),
             "target_time": target_time.isoformat(),
-            "lead_hours": round(lead_hours, 3),
+            "lead_hours": round(lead_hours),
             "temperature_c": temps[i] if i < len(temps) else None,
             "apparent_temperature_c": apparent[i] if i < len(apparent) else None,
             "model": config.FORECAST_MODEL,
@@ -76,4 +80,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main)
