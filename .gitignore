@@ -135,5 +135,6 @@ weather-forecast.service
 weather-forecast.timer
 weather-actuals.service
 weather-actuals.timer
+weather-dashboard.service
 !*.service.example
 !*.timer.example

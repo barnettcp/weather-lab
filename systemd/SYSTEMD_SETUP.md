@@ -4,7 +4,7 @@ This guide explains how to set up the systemd services and timers for automated 
 
 ## Overview
 
-The weather data collection uses **two separate service/timer pairs** with different schedules:
+The weather data collection uses **two separate service/timer pairs** with different schedules, plus a **long-running dashboard service**:
 
 ### Forecast Service (4x daily)
 - **weather-forecast.service**: Fetches weather forecast snapshots from Open-Meteo API
@@ -13,6 +13,10 @@ The weather data collection uses **two separate service/timer pairs** with diffe
 ### Actuals Service (1x daily)
 - **weather-actuals.service**: Fetches actual weather observations from NWS
 - **weather-actuals.timer**: Runs once daily at 3 AM
+
+### Dashboard Service (continuous)
+- **weather-dashboard.service**: Runs Streamlit dashboard continuously for data visualization
+- Accessible from other devices on your network
 
 **Important:** Systemd automatically matches `foo.timer` → `foo.service` by name. You don't need to explicitly reference the service in the timer file.
 
@@ -30,6 +34,9 @@ cp weather-forecast.timer.example weather-forecast.timer
 # Actuals service (1x daily)
 cp weather-actuals.service.example weather-actuals.service
 cp weather-actuals.timer.example weather-actuals.timer
+
+# Dashboard service (continuous)
+cp weather-dashboard.service.example weather-dashboard.service
 ```
 
 ### 2. Edit the Service Files
@@ -214,13 +221,106 @@ chmod +x fetch_forecast.py fetch_actuals.py
 ls -la venv/bin/python
 ```
 
+## Streamlit Dashboard Service
+
+The dashboard service is a **long-running service** (unlike the oneshot fetch services). It runs continuously to serve the Streamlit web interface.
+
+### Dashboard Service
+- **weather-dashboard.service**: Runs the Streamlit dashboard continuously
+- Accessible from other devices on your network (listens on 0.0.0.0)
+- Auto-reloads when you make changes to dashboard.py or visualization code
+- Uses `Restart=on-failure` to automatically recover from crashes
+
+### Setup Instructions for Dashboard
+
+```bash
+# 1. Copy and configure the service file
+cp weather-dashboard.service.example weather-dashboard.service
+
+# 2. Edit weather-dashboard.service with your actual values:
+#    - Replace YOUR_USERNAME with your actual username
+#    - Replace /path/to/your/weather-lab with the actual path
+
+# 3. Install as a user-level service (recommended)
+mkdir -p ~/.config/systemd/user/
+cp weather-dashboard.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+
+# 4. Enable and start the service
+systemctl --user enable weather-dashboard.service
+systemctl --user start weather-dashboard.service
+
+# 5. Check status and get the URL
+systemctl --user status weather-dashboard.service
+
+# The dashboard should now be accessible at:
+# http://<raspberry-pi-ip>:8501
+```
+
+### Dashboard Commands
+
+```bash
+# Check if dashboard is running
+systemctl --user status weather-dashboard.service
+
+# View live logs
+journalctl --user -u weather-dashboard.service -f
+
+# Or check log file
+tail -f logs/dashboard.log
+
+# Restart after making code changes
+# (Note: auto-reload is enabled, but restart ensures clean state)
+systemctl --user restart weather-dashboard.service
+
+# Stop the dashboard
+systemctl --user stop weather-dashboard.service
+
+# Disable from running at boot
+systemctl --user disable weather-dashboard.service
+```
+
+### Updating Dashboard Code
+
+The dashboard service is configured with `--server.runOnSave true`, which means:
+1. When you push changes from your PC: `git push`
+2. Pull on the Pi: `git pull`
+3. Streamlit will automatically detect file changes and prompt you to reload in the browser
+4. No need to restart the service (unless you want a clean state)
+
+### Accessing the Dashboard
+
+- **From your primary PC**: `http://<raspberry-pi-ip>:8501`
+- **From the Pi itself**: `http://localhost:8501`
+- The default Streamlit port is 8501
+
+### Troubleshooting Dashboard
+
+```bash
+# Check if the service is running
+systemctl --user status weather-dashboard.service
+
+# Check recent logs
+journalctl --user -u weather-dashboard.service -n 50 --no-pager
+
+# Check if port 8501 is listening
+ss -tlnp | grep 8501
+
+# Test manually (stop service first)
+systemctl --user stop weather-dashboard.service
+cd /path/to/your/weather-lab
+source venv/bin/activate
+streamlit run dashboard.py --server.address=0.0.0.0 --server.runOnSave true
+```
+
 ## Best Practices
 
 1. **Use user-level services** when possible to avoid requiring root privileges
-2. **Test manually first** before enabling the timers
+2. **Test manually first** before enabling the timers/services
 3. **Monitor logs** regularly to catch any issues (both journalctl and log files)
 4. **Use Persistent=true** in timers to catch up on missed runs after system downtime
 5. **Separate services by schedule** - different update frequencies deserve different timers
 6. **Follow naming conventions** - `foo.timer` automatically triggers `foo.service` (no explicit reference needed)
 7. **Never commit actual .service/.timer files** with real paths/usernames to version control
 8. **Service files triggered by timers** don't need an `[Install]` section
+9. **Long-running services** (like dashboard) need `[Install]` section and should use `Type=simple` with restart policies

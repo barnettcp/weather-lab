@@ -1,0 +1,17 @@
+[Unit]
+Description=Weather Forecast Bias Tracker - Streamlit Dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/your/weather-lab
+ExecStart=/path/to/your/weather-lab/venv/bin/streamlit run dashboard.py --server.address=0.0.0.0 --server.runOnSave true
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/path/to/your/weather-lab/logs/dashboard.log
+StandardError=append:/path/to/your/weather-lab/logs/dashboard.log
+
+[Install]
+WantedBy=multi-user.target
