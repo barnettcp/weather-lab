@@ -50,34 +50,9 @@ Update both service files with your actual values:
 
 **Note:** Service files triggered by timers don't need an `[Install]` section - they're invoked by the timer, not enabled directly.
 
-### 3. Install the Service (User-level)
+### 3. Install the Service (System-level)
 
-For a user-level service (recommended):
-
-```bash
-# Create systemd user directory if it doesn't exist
-mkdir -p ~/.config/systemd/user/
-
-# Copy service and timer files
-cp weather-forecast.{service,timer} ~/.config/systemd/user/
-cp weather-actuals.{service,timer} ~/.config/systemd/user/
-
-# Reload systemd
-systemctl --user daemon-reload
-
-# Enable and start both timers
-systemctl --user enable weather-forecast.timer weather-actuals.timer
-systemctl --user start weather-forecast.timer weather-actuals.timer
-
-# Check status
-systemctl --user status weather-forecast.timer
-systemctl --user status weather-actuals.timer
-systemctl --user list-timers
-```
-
-### 4. Install the Service (System-level)
-
-For a system-level service (requires sudo):
+**Recommended for Pi/server setups** (starts at boot, no login required):
 
 ```bash
 # Copy service and timer files
@@ -120,7 +95,35 @@ sudo systemctl status weather-actuals.timer
 journalctl --user -u weather-forecast.service -f
 journalctl --user -u weather-actuals.service -f
 
-# System service logs (from journalctl)
+# S
+
+### 4. Install the Service (User-level)
+
+**Alternative for development machines** (requires user to be logged in, or enable lingering):
+
+```bash
+# Create systemd user directory if it doesn't exist
+mkdir -p ~/.config/systemd/user/
+
+# Copy service and timer files
+cp weather-forecast.{service,timer} ~/.config/systemd/user/
+cp weather-actuals.{service,timer} ~/.config/systemd/user/
+
+# Reload systemd
+systemctl --user daemon-reload
+
+# Enable and start both timers
+systemctl --user enable weather-forecast.timer weather-actuals.timer
+systemctl --user start weather-forecast.timer weather-actuals.timer
+
+# Allow services to run when not logged in
+loginctl enable-linger $USER
+
+# Check status
+systemctl --user status weather-forecast.timer
+systemctl --user status weather-actuals.timer
+systemctl --user list-timers
+```ystem service logs (from journalctl)
 journalctl -u weather-forecast.service -f
 journalctl -u weather-actuals.service -f
 
@@ -184,17 +187,31 @@ Both timers use `Persistent=true` to catch up on missed runs after system downti
 
 ### Check if timers are active
 ```bash
+# System-level
+systemctl list-timers weather-forecast.timer weather-actuals.timer
+
+# User-level
 systemctl --user list-timers weather-forecast.timer weather-actuals.timer
 ```
 
 ### Check when timers last ran and when they will run next
 ```bash
+# System-level
+sudo systemctl status weather-forecast.timer
+sudo systemctl status weather-actuals.timer
+
+# User-level
 systemctl --user status weather-forecast.timer
 systemctl --user status weather-actuals.timer
 ```
 
 ### View detailed logs
 ```bash
+# System-level
+journalctl -u weather-forecast.service -n 50 --no-pager
+journalctl -u weather-actuals.service -n 50 --no-pager
+
+# User-level
 journalctl --user -u weather-forecast.service -n 50 --no-pager
 journalctl --user -u weather-actuals.service -n 50 --no-pager
 
@@ -205,6 +222,14 @@ tail -n 50 logs/actuals.log
 
 ### Test services manually
 ```bash
+# System-level
+sudo systemctl start weather-forecast.service
+journalctl -u weather-forecast.service -f
+
+sudo systemctl start weather-actuals.service
+journalctl -u weather-actuals.service -f
+
+# User-level
 systemctl --user start weather-forecast.service
 journalctl --user -u weather-forecast.service -f
 
@@ -233,6 +258,8 @@ The dashboard service is a **long-running service** (unlike the oneshot fetch se
 
 ### Setup Instructions for Dashboard
 
+**Recommended: System-level service** (for dedicated Pi/server setups - starts at boot, no login required)
+
 ```bash
 # 1. Copy and configure the service file
 cp weather-dashboard.service.example weather-dashboard.service
@@ -241,61 +268,112 @@ cp weather-dashboard.service.example weather-dashboard.service
 #    - Replace YOUR_USERNAME with your actual username
 #    - Replace /path/to/your/weather-lab with the actual path
 
-# 3. Install as a user-level service (recommended)
-mkdir -p ~/.config/systemd/user/
-cp weather-dashboard.service ~/.config/systemd/user/
-systemctl --user daemon-reload
+# 3. Install as a system-level service
+sudo cp weather-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
 
 # 4. Enable and start the service
-systemctl --user enable weather-dashboard.service
-systemctl --user start weather-dashboard.service
+sudo systemctl enable weather-dashboard.service
+sudo systemctl start weather-dashboard.service
 
 # 5. Check status and get the URL
-systemctl --user status weather-dashboard.service
+sudo systemctl status weather-dashboard.service
 
 # The dashboard should now be accessible at:
 # http://<raspberry-pi-ip>:8501
 ```
 
-### Dashboard Commands
+**Alternative: User-level service** (for development machines or when you want to avoid sudo)
 
 ```bash
+# Install as a user-level service instead
+mkdir -p ~/.config/systemd/user/
+cp weather-dashboard.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable weather-dashboard.service
+systemctl --user start weather-dashboard.service
+
+# Note: For user services to run without being logged in, enable lingering:
+loginctl enable-linger $USER
+```
+
+### Dashboard Commands
+
+**System-level service:**
+```bash
 # Check if dashboard is running
-systemctl --user status weather-dashboard.service
+sudo systemctl status weather-dashboard.service
 
 # View live logs
-journalctl --user -u weather-dashboard.service -f
+journalctl -u weather-dashboard.service -f
 
 # Or check log file
 tail -f logs/dashboard.log
 
 # Restart after making code changes
 # (Note: auto-reload is enabled, but restart ensures clean state)
-systemctl --user restart weather-dashboard.service
+sudo systemctl restart weather-dashboard.service
 
 # Stop the dashboard
-systemctl --user stop weather-dashboard.service
+sudo systemctl stop weather-dashboard.service
 
 # Disable from running at boot
-systemctl --user disable weather-dashboard.service
+sudo systemctl disable weather-dashboard.service
 ```
 
+**User-level service:**
+```bash (system-level)
+sudo systemctl status weather-dashboard.service
+
+# Check recent logs (system-level)
+journalctl -u weather-dashboard.service -n 50 --no-pager
+
+# Check if port 8501 is listening
+ss -tlnp | grep 8501
+# or
+sudo lsof -i :8501
+
+# Test manually (stop service first)
+sudo systemctl stop weather-dashboard.service
+cd /path/to/your/weather-lab
+source venv/bin/activate
+streamlit run dashboard.py --server.address=0.0.0.0 --server.runOnSave true
+
+# Check virtual environment and Streamlit
+/path/to/your/weather-lab/venv/bin/streamlit --version
 ### Updating Dashboard Code
 
 The dashboard service is configured with `--server.runOnSave true`, which means:
 1. When you push changes from your PC: `git push`
 2. Pull on the Pi: `git pull`
-3. Streamlit will automatically detect file changes and prompt you to reload in the browser
-4. No need to restart the service (unless you want a clean state)
+3. System-level vs User-level Services
 
-### Accessing the Dashboard
+### When to use System-level (recommended for Pi/server)
+- ✅ Dedicated device running weather services
+- ✅ Want services to start automatically at boot
+- ✅ Often not logged into the machine
+- ✅ All related services should be managed consistently
+- ⚠️ Requires sudo for management commands
 
-- **From your primary PC**: `http://<raspberry-pi-ip>:8501`
-- **From the Pi itself**: `http://localhost:8501`
-- The default Streamlit port is 8501
+### When to use User-level
+- ✅ Development machine or multi-user system
+- ✅ Want to avoid using sudo
+- ✅ Testing/experimenting with services
+- ⚠️ Requires `loginctl enable-linger` to run when not logged in
+- ⚠️ Services stop if user account is disabled
 
-### Troubleshooting Dashboard
+## Best Practices
 
+1. **For dedicated Pi/server setups**: Use system-level services for consistency and automatic startup
+2. **For development machines**: User-level services work well and avoid sudo
+3. **Test manually first** before enabling the timers/services
+4. **Monitor logs** regularly to catch any issues (both journalctl and log files)
+5. **Use Persistent=true** in timers to catch up on missed runs after system downtime
+6. **Separate services by schedule** - different update frequencies deserve different timers
+7. **Follow naming conventions** - `foo.timer` automatically triggers `foo.service` (no explicit reference needed)
+8. **Never commit actual .service/.timer files** with real paths/usernames to version control
+9. **Service files triggered by timers** don't need an `[Install]` section
+10
 ```bash
 # Check if the service is running
 systemctl --user status weather-dashboard.service
