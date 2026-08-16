@@ -152,3 +152,44 @@ def load_coverage(conn):
     merged["date"] = merged["target_time"].dt.date
     merged["hour"] = merged["target_time"].dt.hour
     return merged
+
+
+def daily_coverage_summary(conn):
+    """Aggregate coverage data by day to show daily completion statistics.
+    
+    Returns a DataFrame with one row per date containing:
+    - date: the calendar date
+    - hours_no_data: count of hours (0-24) with no forecast at all
+    - hours_forecast_only: count of hours with forecast but no actual
+    - hours_both: count of hours with both forecast and actual
+    - total_hours_with_data: hours_forecast_only + hours_both
+    - completion_pct: (hours_both / 24) * 100
+    - day_of_week: 0=Monday, 6=Sunday (for calendar layout)
+    """
+    coverage = load_coverage(conn)
+    
+    # Group by date and count status types
+    daily = (
+        coverage.groupby("date")["status"]
+        .agg(
+            hours_forecast_only=lambda x: (x == 1).sum(),
+            hours_both=lambda x: (x == 2).sum(),
+        )
+        .reset_index()
+    )
+    
+    # Calculate derived metrics
+    daily["total_hours_with_data"] = (
+        daily["hours_forecast_only"] + daily["hours_both"]
+    )
+    daily["hours_no_data"] = 24 - daily["total_hours_with_data"]
+    daily["completion_pct"] = (daily["hours_both"] / 24) * 100
+    
+    # Add calendar positioning info
+    daily["date"] = pd.to_datetime(daily["date"])
+    daily["day_of_week"] = daily["date"].dt.dayofweek  # 0=Monday, 6=Sunday
+    daily["week_of_year"] = daily["date"].dt.isocalendar().week
+    daily["month"] = daily["date"].dt.month
+    daily["year"] = daily["date"].dt.year
+    
+    return daily
