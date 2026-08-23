@@ -346,15 +346,11 @@ with tab_health:
     if fetch_log_df.empty:
         st.info("No fetch history yet — will populate after the next cron run.")
     else:
-        def _highlight_errors(row):
-            bg = "background-color: #ffebee" if row["status"] == "error" else ""
-            return [bg] * len(row)
-
-        st.dataframe(
-            fetch_log_df.style.apply(_highlight_errors, axis=1),
-            use_container_width=True,
-            hide_index=True,
+        display_log = fetch_log_df.copy()
+        display_log["status"] = display_log["status"].map(
+            lambda s: "🔴 error" if s == "error" else s
         )
+        st.dataframe(display_log, use_container_width=True, hide_index=True)
 
 
 # ============================================================================

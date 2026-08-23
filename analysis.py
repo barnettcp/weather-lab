@@ -362,12 +362,14 @@ def load_fetch_log(conn, limit=50):
     """Return the most-recent fetch log entries, newest first.
     Returns an empty DataFrame if the fetch_log table doesn't exist yet."""
     try:
-        return pd.read_sql_query(
+        df = pd.read_sql_query(
             f"SELECT fetch_type, started_at, status, rows_affected, error_msg "
             f"FROM fetch_log ORDER BY started_at DESC LIMIT {limit}",
             conn,
-            parse_dates=["started_at"],
         )
+        if not df.empty:
+            df["started_at"] = pd.to_datetime(df["started_at"], utc=True)
+        return df
     except Exception:
         return pd.DataFrame(
             columns=["fetch_type", "started_at", "status", "rows_affected", "error_msg"]
