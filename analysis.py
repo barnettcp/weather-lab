@@ -326,3 +326,33 @@ def get_last_fetches(conn):
         """
     ).fetchone()
     return last_forecast, last_actual
+
+
+def load_raw_forecasts(conn):
+    """Load the 100 most-recent forecast rows for the data explorer."""
+    return pd.read_sql_query(
+        """
+        SELECT fetched_at, target_time,
+               ROUND(lead_hours, 1) AS lead_hours,
+               temperature_c, apparent_temperature_c, model
+        FROM forecasts
+        ORDER BY fetched_at DESC, target_time
+        LIMIT 100
+        """,
+        conn,
+        parse_dates=["fetched_at", "target_time"],
+    )
+
+
+def load_raw_actuals(conn):
+    """Load the 100 most-recent actual observation rows for the data explorer."""
+    return pd.read_sql_query(
+        """
+        SELECT observed_time, temperature_c, station_id
+        FROM actuals
+        ORDER BY observed_time DESC
+        LIMIT 100
+        """,
+        conn,
+        parse_dates=["observed_time"],
+    )

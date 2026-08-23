@@ -25,7 +25,7 @@ LOCAL_TZ = config.TIMEZONE
 st.set_page_config(page_title="Weather Lab - Forecasts vs Actuals", layout="wide")
 st.title("Weather Lab — Forecasts vs Actuals")
 
-with st.expander("About this project"):
+with st.expander("About this project", expanded=True):
     st.markdown(
         "Welcome to Weather Lab. This is a playground as I develop a process to capture "
         "forecasts and actuals using my Raspberry Pi 4. The hope is to build interesting "
@@ -65,6 +65,24 @@ def parse_utc_str(s):
     return ts.tz_convert(LOCAL_TZ)
 
 
+DATE_RANGE_OPTIONS = ["All Time", "Year to Date", "Last 90 Days", "Last 30 Days", "Last 7 Days"]
+
+
+def filter_by_date_range(df, range_label):
+    """Return df rows whose target_time falls within the chosen window."""
+    if range_label == "All Time" or df.empty:
+        return df
+    now = pd.Timestamp.now("UTC").tz_convert(LOCAL_TZ)
+    cutoffs = {
+        "Year to Date": pd.Timestamp(f"{now.year}-01-01", tz=LOCAL_TZ),
+        "Last 90 Days": now - pd.Timedelta(days=90),
+        "Last 30 Days": now - pd.Timedelta(days=30),
+        "Last 7 Days":  now - pd.Timedelta(days=7),
+    }
+    cutoff = cutoffs.get(range_label)
+    return df if cutoff is None else df[df["target_time"] >= cutoff]
+
+
 # ---------------------------------------------------------------------------
 # Data loading (cached)
 # ---------------------------------------------------------------------------
@@ -72,17 +90,24 @@ def parse_utc_str(s):
 @st.cache_data(ttl=300)
 def load_data():
     with db.get_conn() as conn:
-        df       = analysis.load_joined(conn)
-        health   = analysis.process_health_daily(conn)
-        extents  = analysis.get_data_extents(conn)
+        df            = analysis.load_joined(conn)
+        health        = analysis.process_health_daily(conn)
+        extents       = analysis.get_data_extents(conn)
         last_fc, last_act = analysis.get_last_fetches(conn)
+        raw_fc_df     = analysis.load_raw_forecasts(conn)
+        raw_act_df    = analysis.load_raw_actuals(conn)
     if not df.empty:
         df["target_time"] = to_local(df["target_time"])
         df["fetched_at"]  = to_local(df["fetched_at"])
-    return df, health, extents, last_fc, last_act
+    if not raw_fc_df.empty:
+        raw_fc_df["fetched_at"]  = to_local(raw_fc_df["fetched_at"])
+        raw_fc_df["target_time"] = to_local(raw_fc_df["target_time"])
+    if not raw_act_df.empty:
+        raw_act_df["observed_time"] = to_local(raw_act_df["observed_time"])
+    return df, health, extents, last_fc, last_act, raw_fc_df, raw_act_df
 
 
-df, health_df, extents, last_fc, last_act = load_data()
+df, health_df, extents, last_fc, last_act, raw_fc_df, raw_act_df = load_data()
 
 if health_df.empty:
     st.warning(
@@ -100,20 +125,23 @@ st.divider()
 
 LEAD_OPTIONS = [12, 24, 36, 48, 72, 96, 120]
 
-selected_lead = st.selectbox(
-    "Forecast lead time",
-    options=LEAD_OPTIONS,
-    index=1,                               # default: 24 h
-    format_func=lambda h: f"{h}h ahead",
-)
+_, col_date, col_lead = st.columns([3, 1.5, 1])
+with col_date:
+    date_range = st.selectbox("Date range", DATE_RANGE_OPTIONS, index=0)
+with col_lead:
+    selected_lead = st.selectbox("Lead time", LEAD_OPTIONS, index=1, format_func=lambda h: f"{h}h")
+
+df_filtered = filter_by_date_range(df, date_range)
 
 if df.empty:
     st.info(
         "No matched forecast/actual pairs yet — actuals will appear once "
         "target hours have passed and `fetch_actuals.py` has run."
     )
+elif df_filtered.empty:
+    st.info(f"No data in the selected date range ({date_range}). Try 'All Time'.")
 else:
-    line_df = analysis.load_actuals_vs_forecast_by_lead(df, lead_hours_target=selected_lead)
+    line_df = analysis.load_actuals_vs_forecast_by_lead(df_filtered, lead_hours_target=selected_lead)
     if line_df.empty:
         st.info(
             f"No forecasts found near {selected_lead}h lead time. "
@@ -182,8 +210,10 @@ with tab_overview:
 
     if df.empty:
         st.info("No matched forecast/actual rows yet.")
+    elif df_filtered.empty:
+        st.info(f"No data in the selected date range ({date_range}). Try 'All Time'.")
     else:
-        multi_df = analysis.load_multi_lead_comparison(df, lead_buckets=[24, 48, 72, 96])
+        multi_df = analysis.load_multi_lead_comparison(df_filtered, lead_buckets=[24, 48, 72, 96])
         if multi_df.empty:
             st.info("Not enough data for multi-lead comparison yet.")
         else:
@@ -220,6 +250,27 @@ with tab_overview:
             )
             st.plotly_chart(fig_multi, use_container_width=True)
 
+    st.divider()
+    st.subheader("Raw Data")
+
+    rows_shown = min(100, len(df_filtered))
+    with st.expander(
+        f"Joined dataset — {len(df):,} total rows; showing {rows_shown:,} most recent (date filter applied)"
+    ):
+        if df_filtered.empty:
+            st.info(f"No data in the selected date range ({date_range}).")
+        else:
+            st.dataframe(
+                df_filtered.sort_values("target_time", ascending=False).head(100),
+                use_container_width=True,
+            )
+
+    with st.expander(f"Forecasts table — {len(raw_fc_df):,} most recent rows"):
+        st.dataframe(raw_fc_df, use_container_width=True)
+
+    with st.expander(f"Actuals table — {len(raw_act_df):,} most recent rows"):
+        st.dataframe(raw_act_df, use_container_width=True)
+
 
 # ============================================================================
 # TAB 2 – PROCESS HEALTH
@@ -245,31 +296,37 @@ with tab_health:
 
     st.subheader("Daily Data Collection")
 
-    fig_health = go.Figure()
-    fig_health.add_trace(go.Scatter(
-        x=health_df["date"], y=health_df["fetch_runs"],
-        mode="lines+markers", name="Forecast fetch runs",
-        line=dict(color="#3498db"),
-        marker=dict(size=6),
+    fig_fc = go.Figure(go.Bar(
+        x=health_df["date"],
+        y=health_df["fetch_runs"],
+        marker_color="#3498db",
     ))
-    fig_health.add_trace(go.Scatter(
-        x=health_df["date"], y=health_df["actual_rows"],
-        mode="lines+markers", name="Actual observations",
-        line=dict(color="#2ecc71"),
-        marker=dict(size=6),
-    ))
-    fig_health.update_layout(
+    fig_fc.update_layout(
+        title="Forecast Fetch Runs per Day",
         xaxis_title="Date",
-        yaxis_title="Count",
-        height=400,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis_title="Fetch runs",
+        height=260,
+        showlegend=False,
+        margin=dict(t=40, b=10),
+    )
+    st.plotly_chart(fig_fc, use_container_width=True)
+    st.caption("Distinct API calls per day — typically 1–2 when the cron job is healthy.")
+
+    fig_act = go.Figure(go.Bar(
+        x=health_df["date"],
+        y=health_df["actual_rows"],
+        marker_color="#2ecc71",
+    ))
+    fig_act.update_layout(
+        title="Actual Observations per Day",
+        xaxis_title="Date",
+        yaxis_title="Hourly observations",
+        height=260,
+        showlegend=False,
         margin=dict(t=40, b=40),
     )
-    st.plotly_chart(fig_health, use_container_width=True)
-    st.caption(
-        "Forecast fetch runs = distinct `fetched_at` timestamps per day. "
-        "Actual observations = hourly NWS records stored per day."
-    )
+    st.plotly_chart(fig_act, use_container_width=True)
+    st.caption("Hourly NWS records stored per day — 24 means full-day coverage.")
 
 
 # ============================================================================
