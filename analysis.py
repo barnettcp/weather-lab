@@ -200,3 +200,129 @@ def daily_coverage_summary(conn):
     daily["year"] = daily["date"].dt.year
     
     return daily
+
+
+def load_actuals_vs_forecast_by_lead(df, lead_hours_target=24, tolerance=12):
+    """From the joined df, return one row per target_time using the forecast
+    vintage whose lead_hours is closest to lead_hours_target (within ±tolerance).
+    Useful for the 'actual vs one lead time' line chart."""
+    d = df.copy()
+    d["_lead_dist"] = (d["lead_hours"] - lead_hours_target).abs()
+    d = d[d["_lead_dist"] <= tolerance]
+    if d.empty:
+        return d.drop(columns=["_lead_dist"])
+    idx = d.groupby("target_time")["_lead_dist"].idxmin()
+    return (
+        d.loc[idx]
+        .drop(columns=["_lead_dist"])
+        .sort_values("target_time")
+        .reset_index(drop=True)
+    )
+
+
+def load_multi_lead_comparison(df, lead_buckets=None, tolerance=12):
+    """Return a long-form DataFrame with an 'Actual' series plus one series per
+    entry in lead_buckets, suitable for a multi-line temperature chart.
+
+    Columns: target_time, temperature_c, series
+    """
+    if lead_buckets is None:
+        lead_buckets = [24, 48, 72, 96]
+
+    frames = []
+
+    actuals = (
+        df[["target_time", "actual_temp_c"]]
+        .drop_duplicates("target_time")
+        .rename(columns={"actual_temp_c": "temperature_c"})
+        .assign(series="Actual")
+    )
+    frames.append(actuals[["target_time", "temperature_c", "series"]])
+
+    for lead in lead_buckets:
+        sub = load_actuals_vs_forecast_by_lead(df, lead_hours_target=lead, tolerance=tolerance)
+        if sub.empty:
+            continue
+        frames.append(
+            sub[["target_time", "forecast_temp_c"]]
+            .rename(columns={"forecast_temp_c": "temperature_c"})
+            .assign(series=f"{lead}h forecast")
+            [["target_time", "temperature_c", "series"]]
+        )
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def process_health_daily(conn):
+    """Return a DataFrame with one row per day showing how many forecast
+    fetch runs and actual observations were recorded."""
+    forecasts_daily = pd.read_sql_query(
+        """
+        SELECT date(fetched_at) AS date,
+               COUNT(DISTINCT fetched_at) AS fetch_runs,
+               COUNT(*) AS forecast_rows
+        FROM forecasts
+        GROUP BY date(fetched_at)
+        ORDER BY date
+        """,
+        conn,
+        parse_dates=["date"],
+    )
+    actuals_daily = pd.read_sql_query(
+        """
+        SELECT date(observed_time) AS date,
+               COUNT(*) AS actual_rows
+        FROM actuals
+        GROUP BY date(observed_time)
+        ORDER BY date
+        """,
+        conn,
+        parse_dates=["date"],
+    )
+    merged = (
+        forecasts_daily
+        .merge(actuals_daily, on="date", how="outer")
+        .sort_values("date")
+    )
+    for col in ("fetch_runs", "forecast_rows", "actual_rows"):
+        merged[col] = merged[col].fillna(0).astype(int)
+    return merged
+
+
+def get_data_extents(conn):
+    """Return (first_time_str, last_time_str, matched_hours) for target hours
+    where both a forecast and an actual exist."""
+    return conn.execute(
+        """
+        SELECT MIN(f.target_time) AS first_time,
+               MAX(f.target_time) AS last_time,
+               COUNT(DISTINCT f.target_time) AS matched_hours
+        FROM forecasts f
+        JOIN actuals a ON a.observed_time = f.target_time
+        """
+    ).fetchone()
+
+
+def get_last_fetches(conn):
+    """Return (last_forecast_row, last_actual_row) where:
+      last_forecast_row = (fetched_at_str, row_count_in_that_fetch)
+      last_actual_row   = (last_observed_str, obs_count_last_48h)
+    """
+    last_forecast = conn.execute(
+        """
+        SELECT fetched_at, COUNT(*) AS rows
+        FROM forecasts
+        GROUP BY fetched_at
+        ORDER BY fetched_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    last_actual = conn.execute(
+        """
+        SELECT MAX(observed_time) AS last_observed,
+               SUM(CASE WHEN datetime(observed_time) >= datetime('now', '-2 days')
+                        THEN 1 ELSE 0 END) AS recent_rows
+        FROM actuals
+        """
+    ).fetchone()
+    return last_forecast, last_actual
