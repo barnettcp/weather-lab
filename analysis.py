@@ -164,6 +164,8 @@ def daily_coverage_summary(conn):
     - hours_both: count of hours with both forecast and actual
     - total_hours_with_data: hours_forecast_only + hours_both
     - completion_pct: (hours_both / 24) * 100
+    - calendar_value: special encoding for visualization:
+        -1 = no data, 0 = forecast only, 1-24 = hours with actuals
     - day_of_week: 0=Monday, 6=Sunday (for calendar layout)
     """
     coverage = load_coverage(conn)
@@ -184,6 +186,11 @@ def daily_coverage_summary(conn):
     )
     daily["hours_no_data"] = 24 - daily["total_hours_with_data"]
     daily["completion_pct"] = (daily["hours_both"] / 24) * 100
+    
+    # Create calendar_value for visualization:
+    # -1 = no data at all, 0 = forecast only, 1-24 = hours with actuals
+    daily["calendar_value"] = daily["hours_both"]
+    daily.loc[daily["hours_both"] == 0, "calendar_value"] = 0  # Forecast only
     
     # Add calendar positioning info
     daily["date"] = pd.to_datetime(daily["date"])
