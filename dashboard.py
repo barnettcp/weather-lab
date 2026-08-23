@@ -106,7 +106,8 @@ def load_data():
     if not raw_act_df.empty:
         raw_act_df["observed_time"] = to_local(raw_act_df["observed_time"])
     if not fetch_log_df.empty:
-        fetch_log_df["started_at"] = to_local(fetch_log_df["started_at"])
+        if pd.api.types.is_datetime64_any_dtype(fetch_log_df["started_at"]):
+            fetch_log_df["started_at"] = to_local(fetch_log_df["started_at"])
     return df, health, extents, last_fc, last_act, raw_fc_df, raw_act_df, fetch_log_df
 
 

@@ -367,10 +367,12 @@ def load_fetch_log(conn, limit=50):
             f"FROM fetch_log ORDER BY started_at DESC LIMIT {limit}",
             conn,
         )
-        if not df.empty:
-            df["started_at"] = pd.to_datetime(df["started_at"], utc=True)
-        return df
     except Exception:
+        # Table doesn't exist yet
         return pd.DataFrame(
             columns=["fetch_type", "started_at", "status", "rows_affected", "error_msg"]
         )
+    if not df.empty:
+        # errors="coerce" turns any unparseable value into NaT rather than raising
+        df["started_at"] = pd.to_datetime(df["started_at"], utc=True, errors="coerce")
+    return df
