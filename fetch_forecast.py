@@ -71,10 +71,12 @@ def main():
         payload = fetch_forecast()
     except requests.RequestException as e:
         print(f"[fetch_forecast] ERROR calling Open-Meteo: {e}", file=sys.stderr)
+        db.insert_fetch_log("forecast", fetched_at.isoformat(), "error", 0, str(e))
         sys.exit(1)
 
     rows = to_rows(payload, fetched_at)
     inserted = db.insert_forecasts(rows)
+    db.insert_fetch_log("forecast", fetched_at.isoformat(), "success", inserted)
     print(f"[fetch_forecast] {fetched_at.isoformat()}: "
           f"fetched {len(rows)} hourly points, inserted {inserted} new rows.")
 

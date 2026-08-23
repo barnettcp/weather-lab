@@ -356,3 +356,19 @@ def load_raw_actuals(conn):
         conn,
         parse_dates=["observed_time"],
     )
+
+
+def load_fetch_log(conn, limit=50):
+    """Return the most-recent fetch log entries, newest first.
+    Returns an empty DataFrame if the fetch_log table doesn't exist yet."""
+    try:
+        return pd.read_sql_query(
+            f"SELECT fetch_type, started_at, status, rows_affected, error_msg "
+            f"FROM fetch_log ORDER BY started_at DESC LIMIT {limit}",
+            conn,
+            parse_dates=["started_at"],
+        )
+    except Exception:
+        return pd.DataFrame(
+            columns=["fetch_type", "started_at", "status", "rows_affected", "error_msg"]
+        )

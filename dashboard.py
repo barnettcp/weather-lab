@@ -96,6 +96,7 @@ def load_data():
         last_fc, last_act = analysis.get_last_fetches(conn)
         raw_fc_df     = analysis.load_raw_forecasts(conn)
         raw_act_df    = analysis.load_raw_actuals(conn)
+        fetch_log_df  = analysis.load_fetch_log(conn)
     if not df.empty:
         df["target_time"] = to_local(df["target_time"])
         df["fetched_at"]  = to_local(df["fetched_at"])
@@ -104,10 +105,12 @@ def load_data():
         raw_fc_df["target_time"] = to_local(raw_fc_df["target_time"])
     if not raw_act_df.empty:
         raw_act_df["observed_time"] = to_local(raw_act_df["observed_time"])
-    return df, health, extents, last_fc, last_act, raw_fc_df, raw_act_df
+    if not fetch_log_df.empty:
+        fetch_log_df["started_at"] = to_local(fetch_log_df["started_at"])
+    return df, health, extents, last_fc, last_act, raw_fc_df, raw_act_df, fetch_log_df
 
 
-df, health_df, extents, last_fc, last_act, raw_fc_df, raw_act_df = load_data()
+df, health_df, extents, last_fc, last_act, raw_fc_df, raw_act_df, fetch_log_df = load_data()
 
 if health_df.empty:
     st.warning(
@@ -276,7 +279,7 @@ with tab_overview:
 # TAB 2 – PROCESS HEALTH
 # ============================================================================
 with tab_health:
-    h1, h2 = st.columns(2)
+    h1, h2, h3 = st.columns(3)
 
     if last_fc:
         fc_time = parse_utc_str(last_fc[0])
@@ -291,6 +294,15 @@ with tab_health:
         h2.caption(f"{last_act[1]} observations in last 48h")
     else:
         h2.metric("Last actual observation", "—")
+
+    if not fetch_log_df.empty:
+        seven_days_ago = pd.Timestamp.now("UTC").tz_convert(LOCAL_TZ) - pd.Timedelta(days=7)
+        n_errors = int(
+            ((fetch_log_df["status"] == "error") & (fetch_log_df["started_at"] >= seven_days_ago)).sum()
+        )
+        h3.metric("Fetch errors (last 7 days)", n_errors)
+    else:
+        h3.metric("Fetch errors (last 7 days)", "—")
 
     st.divider()
 
@@ -327,6 +339,22 @@ with tab_health:
     )
     st.plotly_chart(fig_act, use_container_width=True)
     st.caption("Hourly NWS records stored per day — 24 means full-day coverage.")
+
+    st.divider()
+    st.subheader("Fetch History")
+
+    if fetch_log_df.empty:
+        st.info("No fetch history yet — will populate after the next cron run.")
+    else:
+        def _highlight_errors(row):
+            bg = "background-color: #ffebee" if row["status"] == "error" else ""
+            return [bg] * len(row)
+
+        st.dataframe(
+            fetch_log_df.style.apply(_highlight_errors, axis=1),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================================

@@ -79,11 +79,13 @@ def to_hourly_rows(features, station_id):
 
 def main():
     db.init_db()
+    started_at = datetime.now(timezone.utc)
 
     try:
         station_id = discover_station()
     except requests.RequestException as e:
         print(f"[fetch_actuals] ERROR discovering station: {e}", file=sys.stderr)
+        db.insert_fetch_log("actuals", started_at.isoformat(), "error", 0, str(e))
         sys.exit(1)
 
     end = datetime.now(timezone.utc)
@@ -93,10 +95,12 @@ def main():
         features = fetch_observations(station_id, start, end)
     except requests.RequestException as e:
         print(f"[fetch_actuals] ERROR fetching observations: {e}", file=sys.stderr)
+        db.insert_fetch_log("actuals", started_at.isoformat(), "error", 0, str(e))
         sys.exit(1)
 
     rows = to_hourly_rows(features, station_id)
     inserted = db.insert_actuals(rows)
+    db.insert_fetch_log("actuals", started_at.isoformat(), "success", inserted)
     print(f"[fetch_actuals] {end.isoformat()}: station {station_id}, "
           f"{len(features)} raw observations -> {len(rows)} hourly rows, "
           f"{inserted} inserted/updated.")

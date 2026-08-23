@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS meta (
     key     TEXT PRIMARY KEY,
     value   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS fetch_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetch_type    TEXT NOT NULL,     -- 'forecast' or 'actuals'
+    started_at    TEXT NOT NULL,     -- UTC ISO-8601
+    status        TEXT NOT NULL,     -- 'success' or 'error'
+    rows_affected INTEGER NOT NULL DEFAULT 0,
+    error_msg     TEXT               -- NULL on success
+);
+
+CREATE INDEX IF NOT EXISTS idx_fetch_log_started ON fetch_log(started_at);
 """
 
 
@@ -108,6 +119,15 @@ def insert_actuals(rows):
             rows,
         )
         return cur.rowcount
+
+
+def insert_fetch_log(fetch_type, started_at, status, rows_affected=0, error_msg=None):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO fetch_log (fetch_type, started_at, status, rows_affected, error_msg) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (fetch_type, started_at, status, rows_affected, error_msg),
+        )
 
 
 if __name__ == "__main__":
