@@ -253,39 +253,46 @@ def load_multi_lead_comparison(df, lead_buckets=None, tolerance=12):
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def process_health_daily(conn):
-    """Return a DataFrame with one row per day showing how many forecast
-    fetch runs and actual observations were recorded."""
-    forecasts_daily = pd.read_sql_query(
-        """
-        SELECT date(fetched_at) AS date,
-               COUNT(DISTINCT fetched_at) AS fetch_runs,
-               COUNT(*) AS forecast_rows
-        FROM forecasts
-        GROUP BY date(fetched_at)
-        ORDER BY date
-        """,
-        conn,
-        parse_dates=["date"],
-    )
-    actuals_daily = pd.read_sql_query(
-        """
-        SELECT date(observed_time) AS date,
-               COUNT(*) AS actual_rows
-        FROM actuals
-        GROUP BY date(observed_time)
-        ORDER BY date
-        """,
-        conn,
-        parse_dates=["date"],
-    )
+def process_health_daily(conn, tz=None):
+    """Return daily counts of forecast fetch runs and actual observations.
+    Pass tz (IANA string) to bucket by local date; omit for UTC dates."""
+    fc  = pd.read_sql_query("SELECT fetched_at FROM forecasts", conn)
+    act = pd.read_sql_query("SELECT observed_time FROM actuals", conn)
+
+    def local_dates(df, col):
+        s = pd.to_datetime(df[col], utc=True)
+        if tz:
+            s = s.dt.tz_convert(tz)
+        return s.dt.date
+
+    if fc.empty:
+        fc_daily = pd.DataFrame(columns=["date", "fetch_runs", "forecast_rows"])
+    else:
+        fc["date"] = local_dates(fc, "fetched_at")
+        fc_daily = (
+            fc.groupby("date")["fetched_at"]
+            .agg(fetch_runs="nunique", forecast_rows="count")
+            .reset_index()
+        )
+
+    if act.empty:
+        act_daily = pd.DataFrame(columns=["date", "actual_rows"])
+    else:
+        act["date"] = local_dates(act, "observed_time")
+        act_daily = (
+            act.groupby("date")["observed_time"]
+            .agg(actual_rows="count")
+            .reset_index()
+        )
+
     merged = (
-        forecasts_daily
-        .merge(actuals_daily, on="date", how="outer")
+        fc_daily
+        .merge(act_daily, on="date", how="outer")
         .sort_values("date")
     )
     for col in ("fetch_runs", "forecast_rows", "actual_rows"):
         merged[col] = merged[col].fillna(0).astype(int)
+    merged["date"] = pd.to_datetime(merged["date"])
     return merged
 
 

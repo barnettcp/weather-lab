@@ -91,7 +91,7 @@ def filter_by_date_range(df, range_label):
 def load_data():
     with db.get_conn() as conn:
         df            = analysis.load_joined(conn)
-        health        = analysis.process_health_daily(conn)
+        health        = analysis.process_health_daily(conn, tz=LOCAL_TZ)
         extents       = analysis.get_data_extents(conn)
         last_fc, last_act = analysis.get_last_fetches(conn)
         raw_fc_df     = analysis.load_raw_forecasts(conn)
@@ -323,7 +323,7 @@ with tab_health:
         margin=dict(t=40, b=10),
     )
     st.plotly_chart(fig_fc, use_container_width=True)
-    st.caption("Distinct API calls per day — typically 1–2 when the cron job is healthy.")
+    st.caption("Distinct API calls per day — typically 4 when the cron job is healthy.")
 
     fig_act = go.Figure(go.Bar(
         x=health_df["date"],
