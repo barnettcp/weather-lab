@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 load_dotenv()  # load .env file if present, so we can override config values
 
 # --- Location -------------------------------------------------------------
-# Mountlake Terrace Transit Station
-LATITUDE = 47.7856
-LONGITUDE = -122.3151
+# Seattle SEAW1 Weather Station
+LATITUDE = 47.68528
+LONGITUDE = -122.25111
 TIMEZONE = "America/Los_Angeles"  # IANA tz name, used for the dashboard only;
                                   # all DB timestamps are stored in UTC.
 
