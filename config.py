@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()  # load .env file if present, so we can override config values
 
 # --- Location -------------------------------------------------------------
-# Seattle SEAW1 Weather Station
+# Seattle Sand Point SEAW1 Station
 LATITUDE = 47.68528
 LONGITUDE = -122.25111
 TIMEZONE = "America/Los_Angeles"  # IANA tz name, used for the dashboard only;
