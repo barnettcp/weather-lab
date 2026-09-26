@@ -1,8 +1,7 @@
 # ADR-001: Data Capture Overhaul — Multi-Location, Extended Fields, Schema Redesign
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-09-26  
-**Relates to:** `notes/data_capture_overhaul.md`
 
 ---
 
