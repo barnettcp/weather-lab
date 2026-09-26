@@ -1,7 +1,7 @@
 # ADR-001: Data Capture Overhaul — Multi-Location, Extended Fields, Schema Redesign
 
 **Status:** Proposed  
-**Date:** 2026-09-25  
+**Date:** 2026-09-26  
 **Relates to:** `notes/data_capture_overhaul.md`
 
 ---
@@ -107,6 +107,26 @@ before the discovery code is deleted.
 A nullable `station_id TEXT` column is added to `fetch_log` so that per-station fetch
 results can be distinguished when the multi-station loop writes one log entry per station.
 
+### 8. Named forecast models replace `best_match`
+
+`config.FORECAST_MODEL = "best_match"` is replaced with `config.FORECAST_MODELS =
+["gfs_seamless", "ecmwf_ifs04"]`. Each model is fetched in a separate API call per
+station; the `model` column stores the specific model name for every row.
+
+**Rationale:** `best_match` is a routing layer, not a model. Open-Meteo can silently
+change which underlying model it selects as their routing logic evolves, creating
+unattributable variance in the data. The schema's `model` column was already designed
+for named-model tracking; this decision activates that design intent.
+
+One call per (station, model) pair keeps the response structure identical to the existing
+single-model format — no response-parsing changes beyond adding the model loop.
+
+- **`gfs_seamless`** — NOAA GFS, updated 4×/day, 0.25° resolution; the "American model"
+- **`ecmwf_ifs04`** — ECMWF IFS, updated 2×/day, 0.4° resolution; generally the global
+  accuracy benchmark, known colloquially as the "European model"
+
+`FORECAST_MODEL` (singular) is removed from `config.py` entirely.
+
 ---
 
 ## Consequences
@@ -116,12 +136,16 @@ results can be distinguished when the multi-station loop writes one log entry pe
 - Bias analysis can now cover wind, precipitation, and cloud cover in addition to temperature.
 - Unit consistency removes a class of analysis bugs.
 - Simpler fetch code (no dynamic discovery, explicit station loops).
+- Model attribution is deterministic; every forecast row is stamped with the exact model
+  that generated it, enabling model-vs-model and model-vs-actual comparison.
 
 **Negative / Trade-offs:**
 - Five new nullable columns mean more NULLs in early data while stations occasionally
   fail to report sensors.
 - Cloud cover is an approximation; the categorical-to-numeric mapping loses fidelity.
-- `best_match` Open-Meteo model blends multiple underlying models; precipitation
-  definitions may vary slightly between them.
+- `gfs_seamless` and `ecmwf_ifs04` may define precipitation slightly differently;
+  model-vs-model comparisons on precipitation should account for this.
+- Two forecast rows per (station, target_time, fetched_at) triplet (one per model);
+  analysis queries must include a `model` filter or aggregation.
 - `analysis.py` and `dashboard.py` are not updated in this pass and will only work
   against the single SEAW1 location until a future overhaul.
