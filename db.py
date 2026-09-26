@@ -17,20 +17,31 @@ CREATE TABLE IF NOT EXISTS forecasts (
     lead_hours              REAL NOT NULL,   -- target_time - fetched_at, in hours
     temperature_c           REAL,
     apparent_temperature_c  REAL,
+    cloud_cover_pct         REAL,
+    wind_speed_kmh          REAL,
+    wind_direction_deg      REAL,
+    wind_gusts_kmh          REAL,
+    precipitation_mm        REAL,
     model                   TEXT NOT NULL,
+    station_id              TEXT NOT NULL,
     latitude                REAL NOT NULL,
     longitude               REAL NOT NULL,
-    UNIQUE(fetched_at, target_time, model, latitude, longitude)
+    UNIQUE(fetched_at, target_time, model, station_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_forecasts_target ON forecasts(target_time);
 CREATE INDEX IF NOT EXISTS idx_forecasts_lead ON forecasts(lead_hours);
 
 CREATE TABLE IF NOT EXISTS actuals (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    observed_time   TEXT NOT NULL,   -- hour bucket, UTC (floored to the hour)
-    temperature_c   REAL,
-    station_id      TEXT NOT NULL,
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    observed_time       TEXT NOT NULL,   -- hour bucket, UTC (floored to the hour)
+    temperature_c       REAL,
+    cloud_cover_pct     REAL,
+    wind_speed_kmh      REAL,
+    wind_direction_deg  REAL,
+    wind_gusts_kmh      REAL,
+    precipitation_mm    REAL,
+    station_id          TEXT NOT NULL,
     UNIQUE(observed_time, station_id)
 );
 
@@ -47,7 +58,8 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     started_at    TEXT NOT NULL,     -- UTC ISO-8601
     status        TEXT NOT NULL,     -- 'success' or 'error'
     rows_affected INTEGER NOT NULL DEFAULT 0,
-    error_msg     TEXT               -- NULL on success
+    error_msg     TEXT,              -- NULL on success
+    station_id    TEXT               -- NULL for run-level entries
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_started ON fetch_log(started_at);
@@ -94,10 +106,14 @@ def insert_forecasts(rows):
             """
             INSERT OR IGNORE INTO forecasts
                 (fetched_at, target_time, lead_hours, temperature_c,
-                 apparent_temperature_c, model, latitude, longitude)
+                 apparent_temperature_c, cloud_cover_pct, wind_speed_kmh,
+                 wind_direction_deg, wind_gusts_kmh, precipitation_mm,
+                 model, station_id, latitude, longitude)
             VALUES
                 (:fetched_at, :target_time, :lead_hours, :temperature_c,
-                 :apparent_temperature_c, :model, :latitude, :longitude)
+                 :apparent_temperature_c, :cloud_cover_pct, :wind_speed_kmh,
+                 :wind_direction_deg, :wind_gusts_kmh, :precipitation_mm,
+                 :model, :station_id, :latitude, :longitude)
             """,
             rows,
         )
@@ -111,22 +127,32 @@ def insert_actuals(rows):
     with get_conn() as conn:
         cur = conn.executemany(
             """
-            INSERT INTO actuals (observed_time, temperature_c, station_id)
-            VALUES (:observed_time, :temperature_c, :station_id)
-            ON CONFLICT(observed_time, station_id)
-            DO UPDATE SET temperature_c = excluded.temperature_c
+            INSERT INTO actuals
+                (observed_time, temperature_c, cloud_cover_pct, wind_speed_kmh,
+                 wind_direction_deg, wind_gusts_kmh, precipitation_mm, station_id)
+            VALUES
+                (:observed_time, :temperature_c, :cloud_cover_pct, :wind_speed_kmh,
+                 :wind_direction_deg, :wind_gusts_kmh, :precipitation_mm, :station_id)
+            ON CONFLICT(observed_time, station_id) DO UPDATE SET
+                temperature_c      = excluded.temperature_c,
+                cloud_cover_pct    = excluded.cloud_cover_pct,
+                wind_speed_kmh     = excluded.wind_speed_kmh,
+                wind_direction_deg = excluded.wind_direction_deg,
+                wind_gusts_kmh     = excluded.wind_gusts_kmh,
+                precipitation_mm   = excluded.precipitation_mm
             """,
             rows,
         )
         return cur.rowcount
 
 
-def insert_fetch_log(fetch_type, started_at, status, rows_affected=0, error_msg=None):
+def insert_fetch_log(fetch_type, started_at, status, rows_affected=0, error_msg=None, station_id=None):
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO fetch_log (fetch_type, started_at, status, rows_affected, error_msg) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (fetch_type, started_at, status, rows_affected, error_msg),
+            "INSERT INTO fetch_log "
+            "(fetch_type, started_at, status, rows_affected, error_msg, station_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (fetch_type, started_at, status, rows_affected, error_msg, station_id),
         )
 
 

@@ -8,10 +8,17 @@ from dotenv import load_dotenv
 
 load_dotenv()  # load .env file if present, so we can override config values
 
-# --- Location -------------------------------------------------------------
-# Seattle Sand Point SEAW1 Station
-LATITUDE = 47.68528
-LONGITUDE = -122.25111
+# --- Locations ------------------------------------------------------------
+# SEAW1 is the default / primary station (NOAA Western Regional Center, Seattle).
+STATIONS = [
+    {"id": "SEAW1", "latitude": 47.68528, "longitude": -122.25111, "name": "Seattle Sand Point"},
+    {"id": "KPAE",  "latitude": 47.90510, "longitude": -122.28140, "name": "Seattle Paine Field"},
+    {"id": "KBLI",  "latitude": 48.79911, "longitude": -122.54064, "name": "Bellingham Airport"},
+    {"id": "KCLS",  "latitude": 46.67700, "longitude": -122.98280, "name": "Chehalis-Centralia Airport"},
+]
+# Backward-compat aliases so analysis.py and dashboard.py keep working unchanged.
+LATITUDE  = STATIONS[0]["latitude"]
+LONGITUDE = STATIONS[0]["longitude"]
 TIMEZONE = "America/Los_Angeles"  # IANA tz name, used for the dashboard only;
                                   # all DB timestamps are stored in UTC.
 
@@ -20,10 +27,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "weather.db")
 
 # --- Open-Meteo forecast settings ------------------------------------------
-# "best_match" lets Open-Meteo pick the best model for your location.
-# You can instead pin a specific model (e.g. "gfs_seamless", "ecmwf_ifs04")
-# if you want to study bias for one specific model rather than a blend.
-FORECAST_MODEL = "best_match"
+# Named models are fetched separately so each row has deterministic attribution.
+FORECAST_MODELS = ["gfs_seamless", "ecmwf_ifs04"]
 FORECAST_DAYS = 10          # how far ahead to pull each time we fetch
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
