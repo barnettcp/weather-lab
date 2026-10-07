@@ -130,6 +130,13 @@ st.divider()
 LEAD_OPTIONS = [12, 24, 36, 48, 72, 96, 120]
 station_lookup = {station["id"]: station.get("name", station["id"]) for station in config.STATIONS}
 station_options = ["All Stations (Mean)"] + [station["id"] for station in config.STATIONS]
+station_palette = {
+    station_lookup[station["id"]]: color
+    for station, color in zip(
+        config.STATIONS,
+        ["#3498db", "#e67e22", "#9b59b6", "#e74c3c", "#2ecc71", "#1f77b4"],
+    )
+}
 
 _, col_station, col_model, col_date, col_lead = st.columns([2, 1.4, 1.4, 1.2, 1])
 with col_station:
@@ -236,13 +243,6 @@ with tab_overview:
     if station_summary.empty:
         st.info("Not enough data to compare stations at this lead time. Try a different lead or widen the date range.")
     else:
-        station_palette = {
-            station_lookup[station["id"]]: color
-            for station, color in zip(
-                config.STATIONS,
-                ["#3498db", "#e67e22", "#9b59b6", "#e74c3c", "#2ecc71", "#1f77b4"],
-            )
-        }
         station_summary["station_name"] = pd.Categorical(
             station_summary["station_name"],
             categories=[station_lookup[station["id"]] for station in config.STATIONS],
@@ -461,39 +461,48 @@ with tab_convergence:
         "off in ways the 24h forecast is not? The views below are a starting point."
     )
 
-    if not df.empty:
+    conv_selected_df = df_filtered.copy()
+    conv_all_stations_df = df_all_stations.copy()
+
+    if not conv_all_stations_df.empty:
         # -- Error distributions --
         st.subheader("Forecast error by lead time")
-        st.caption("error = forecast − actual (°C). Boxes should narrow and center on 0 as lead time shrinks.")
+        st.caption(
+            "error = forecast − actual (°C). This chart follows your selected station/model/date filters."
+        )
 
         bin_hours = st.select_slider(
             "Lead time bucket size (hours)", options=[6, 12, 24, 48], value=24,
             key="conv_bin_hours",
         )
-        lead_df = analysis.bucket_lead_hours(df, bin_hours=bin_hours)
-        lead_df["lead_bucket_label"] = lead_df["lead_bucket"].apply(
-            lambda h: f"{h}–{h + bin_hours}h"
-        )
-        order = [f"{h}–{h + bin_hours}h" for h in sorted(lead_df["lead_bucket"].unique())]
-        fig_box = px.box(
-            lead_df, x="lead_bucket_label", y="error_c",
-            category_orders={"lead_bucket_label": order},
-            points="outliers",
-            labels={"lead_bucket_label": "Lead time bucket", "error_c": "Error (°C)"},
-        )
-        fig_box.add_hline(y=0, line_dash="dot", line_color="gray")
-        st.plotly_chart(fig_box, use_container_width=True)
+        if conv_selected_df.empty:
+            st.info("No data for the selected station/model/date filters.")
+        else:
+            lead_df = analysis.bucket_lead_hours(conv_selected_df, bin_hours=bin_hours)
+            lead_df["lead_bucket_label"] = lead_df["lead_bucket"].apply(
+                lambda h: f"{h}–{h + bin_hours}h"
+            )
+            order = [f"{h}–{h + bin_hours}h" for h in sorted(lead_df["lead_bucket"].unique())]
+            fig_box = px.box(
+                lead_df, x="lead_bucket_label", y="error_c",
+                category_orders={"lead_bucket_label": order},
+                points="outliers",
+                labels={"lead_bucket_label": "Lead time bucket", "error_c": "Error (°C)"},
+            )
+            fig_box.add_hline(y=0, line_dash="dot", line_color="gray")
+            st.plotly_chart(fig_box, use_container_width=True)
 
         st.divider()
 
-        st.subheader("Forecast error by actual temperature (10°C buckets)")
+        st.subheader("Forecast error by actual temperature (10°C buckets) — all stations")
         st.caption(
-            "Bucketed by ACTUAL temperature so the split itself can't be biased by forecast error. "
-            "Violin shows full distribution shape; box inside shows quartiles."
+            "All configured stations are shown together (respecting model/date filters), colored by station."
         )
-        temp_df, temp_order = analysis.decade_temp_buckets(df)
+        temp_df, temp_order = analysis.decade_temp_buckets(conv_all_stations_df)
+        temp_df["station_name"] = temp_df["station_id"].map(station_lookup)
         fig_violin = px.violin(
-            temp_df, x="actual_temp_bucket", y="error_c", box=True, points="outliers",
+            temp_df, x="actual_temp_bucket", y="error_c", color="station_name",
+            color_discrete_map=station_palette, box=True, points="outliers",
             category_orders={"actual_temp_bucket": temp_order},
             labels={"actual_temp_bucket": "Actual temp bucket", "error_c": "Error (°C)"},
         )
@@ -503,9 +512,9 @@ with tab_convergence:
         st.divider()
 
         # -- Convergence toward actual --
-        st.subheader("Forecast convergence toward the actual")
+        st.subheader("Forecast convergence toward the actual — all stations")
 
-        counts, max_vintages = analysis.target_time_completeness(df)
+        counts, max_vintages = analysis.target_time_completeness(conv_all_stations_df)
         complete_times = counts.loc[counts["is_complete"], "target_time"]
 
         view_mode = st.radio(
@@ -520,46 +529,39 @@ with tab_convergence:
         )
 
         if view_mode.startswith("All"):
-            plot_df = df[df["target_time"].isin(complete_times)].copy()
+            plot_df = conv_all_stations_df[conv_all_stations_df["target_time"].isin(complete_times)].copy()
+            plot_df["station_name"] = plot_df["station_id"].map(station_lookup)
             agg = (
-                plot_df.groupby("lead_hours")["error_c"]
+                plot_df.groupby(["station_name", "lead_hours"])["error_c"]
                 .agg(
                     median="median",
-                    q25=lambda s: s.quantile(0.25),
-                    q75=lambda s: s.quantile(0.75),
                     n="count",
                 )
                 .reset_index()
-                .sort_values("lead_hours")
+                .sort_values(["station_name", "lead_hours"])
             )
             fig_conv = go.Figure()
-            fig_conv.add_trace(go.Scatter(
-                x=agg["lead_hours"], y=agg["q75"],
-                mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip",
-            ))
-            fig_conv.add_trace(go.Scatter(
-                x=agg["lead_hours"], y=agg["q25"],
-                mode="lines", line=dict(width=0),
-                fill="tonexty", fillcolor="rgba(31,78,121,0.2)",
-                name="IQR (25th–75th pct)",
-            ))
-            fig_conv.add_trace(go.Scatter(
-                x=agg["lead_hours"], y=agg["median"],
-                mode="lines+markers", line=dict(color="#1f4e79"),
-                name="Median error",
-            ))
+            for station in [station_lookup[s["id"]] for s in config.STATIONS]:
+                sub = agg[agg["station_name"] == station]
+                if sub.empty:
+                    continue
+                fig_conv.add_trace(go.Scatter(
+                    x=sub["lead_hours"], y=sub["median"],
+                    mode="lines+markers", line=dict(color=station_palette.get(station)),
+                    name=station,
+                ))
             fig_conv.add_hline(y=0, line_dash="dot", line_color="gray")
             fig_conv.update_xaxes(autorange="reversed", title="Lead time (hours) — further out ←")
             fig_conv.update_yaxes(title="Error, forecast − actual (°C)")
             fig_conv.update_layout(height=500)
             st.plotly_chart(fig_conv, use_container_width=True)
             st.caption(
-                f"{agg['n'].sum():,} forecast points across {len(complete_times)} complete target hours. "
-                "Only hours where every scheduled vintage was captured AND an actual is on file."
+                f"{agg['n'].sum():,} forecast points across {len(complete_times)} complete target hours "
+                "for all stations where complete records exist."
             )
         else:
             options = (
-                df[df["target_time"].isin(complete_times)]["target_time"]
+                conv_all_stations_df[conv_all_stations_df["target_time"].isin(complete_times)]["target_time"]
                 .drop_duplicates().sort_values(ascending=False)
             )
             if options.empty:
@@ -571,20 +573,29 @@ with tab_convergence:
                     format_func=lambda t: t.strftime("%Y-%m-%d %H:%M %Z"),
                     key="conv_hour_pick",
                 )
-                day_df = df[df["target_time"] == picked].sort_values("lead_hours")
-                actual_temp = day_df["actual_temp_c"].iloc[0]
+                day_df = conv_all_stations_df[conv_all_stations_df["target_time"] == picked].copy()
+                day_df["station_name"] = day_df["station_id"].map(station_lookup)
+                day_df = day_df.sort_values(["station_name", "lead_hours"])
 
                 fig_single = go.Figure()
-                fig_single.add_trace(go.Scatter(
-                    x=day_df["lead_hours"], y=day_df["forecast_temp_c"],
-                    mode="lines+markers", name="Forecast temp",
-                    line=dict(color="#1f4e79"),
-                ))
-                fig_single.add_hline(
-                    y=actual_temp, line_dash="dash", line_color="#c0392b",
-                    annotation_text=f"Actual: {actual_temp:.1f}°C",
-                )
+                for station in [station_lookup[s["id"]] for s in config.STATIONS]:
+                    station_day_df = day_df[day_df["station_name"] == station]
+                    if station_day_df.empty:
+                        continue
+                    actual_temp = station_day_df["actual_temp_c"].iloc[0]
+                    fig_single.add_trace(go.Scatter(
+                        x=station_day_df["lead_hours"], y=station_day_df["forecast_temp_c"],
+                        mode="lines+markers", name=f"{station} forecast",
+                        line=dict(color=station_palette.get(station)),
+                    ))
+                    fig_single.add_trace(go.Scatter(
+                        x=station_day_df["lead_hours"], y=[actual_temp] * len(station_day_df),
+                        mode="lines", name=f"{station} actual",
+                        line=dict(color=station_palette.get(station), dash="dash"),
+                    ))
                 fig_single.update_xaxes(autorange="reversed", title="Lead time (hours) — further out ←")
                 fig_single.update_yaxes(title="Temperature (°C)")
                 fig_single.update_layout(height=500)
                 st.plotly_chart(fig_single, use_container_width=True)
+    else:
+        st.info("No matched forecast/actual data available for convergence views yet.")
