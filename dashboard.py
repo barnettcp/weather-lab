@@ -236,27 +236,6 @@ with tab_overview:
     if station_summary.empty:
         st.info("Not enough data to compare stations at this lead time. Try a different lead or widen the date range.")
     else:
-        station_fig = px.bar(
-            station_summary,
-            x="station_name",
-            y="mean_abs_error",
-            color="station_name",
-            text_auto=".2f",
-            labels={"station_name": "Station", "mean_abs_error": "Mean absolute error (°C)"},
-        )
-        station_fig.update_layout(
-            height=320,
-            showlegend=False,
-            margin=dict(t=20, b=20),
-            xaxis_title="Station",
-            yaxis_title="Mean absolute error (°C)",
-        )
-        st.plotly_chart(station_fig, use_container_width=True)
-
-        map_df = pd.DataFrame(config.STATIONS).copy()
-        map_df["station_name"] = map_df["id"].map(station_lookup)
-        map_df = map_df.rename(columns={"id": "station_id", "latitude": "lat", "longitude": "lon"})
-        map_df = map_df.merge(station_summary[["station_id", "mean_abs_error"]], on="station_id", how="left")
         station_palette = {
             station_lookup[station["id"]]: color
             for station, color in zip(
@@ -264,6 +243,38 @@ with tab_overview:
                 ["#3498db", "#e67e22", "#9b59b6", "#e74c3c", "#2ecc71", "#1f77b4"],
             )
         }
+        station_summary["station_name"] = pd.Categorical(
+            station_summary["station_name"],
+            categories=[station_lookup[station["id"]] for station in config.STATIONS],
+            ordered=True,
+        )
+        station_summary = station_summary.sort_values("station_name")
+
+        col_bar, col_map = st.columns([2, 1])
+
+        station_fig = px.bar(
+            station_summary,
+            x="station_name",
+            y="mean_abs_error",
+            color="station_name",
+            color_discrete_map=station_palette,
+            text_auto=".2f",
+            labels={"station_name": "Station", "mean_abs_error": "Mean absolute error (°C)"},
+        )
+        station_fig.update_layout(
+            height=300,
+            showlegend=False,
+            margin=dict(t=20, b=20, r=10, l=10),
+            xaxis_title="Station",
+            yaxis_title="Mean absolute error (°C)",
+        )
+        with col_bar:
+            st.plotly_chart(station_fig, use_container_width=True)
+
+        map_df = pd.DataFrame(config.STATIONS).copy()
+        map_df["station_name"] = map_df["id"].map(station_lookup)
+        map_df = map_df.rename(columns={"id": "station_id", "latitude": "lat", "longitude": "lon"})
+        map_df = map_df.merge(station_summary[["station_id", "mean_abs_error"]], on="station_id", how="left")
         map_fig = px.scatter_mapbox(
             map_df,
             lat="lat",
@@ -273,17 +284,18 @@ with tab_overview:
             color="station_name",
             color_discrete_map=station_palette,
             size=[10 if pd.notna(v) else 6 for v in map_df["mean_abs_error"]],
-            zoom=4.5,
-            center={"lat": 47.6, "lon": -120.5},
+            zoom=5.0,
+            center={"lat": map_df["lat"].mean(), "lon": map_df["lon"].mean()},
             opacity=0.9,
-            title="Station locations",
             mapbox_style="open-street-map",
         )
         map_fig.update_layout(
-            height=360,
-            margin=dict(t=10, r=10, b=10, l=10),
+            height=300,
+            showlegend=False,
+            margin=dict(t=0, r=0, b=0, l=0),
         )
-        st.plotly_chart(map_fig, use_container_width=True)
+        with col_map:
+            st.plotly_chart(map_fig, use_container_width=True)
         st.caption(
             "Map tiles © OpenStreetMap contributors. "
             "Pins always show all configured weather stations; hover to view station MAE."
