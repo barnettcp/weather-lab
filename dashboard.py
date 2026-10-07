@@ -464,12 +464,39 @@ with tab_convergence:
     conv_selected_df = df_filtered.copy()
     conv_all_stations_df = df_all_stations.copy()
 
+    # When "All models" is selected, convergence lines can alternate between
+    # model-specific points at the same lead hour. Collapse to one value per
+    # station/target/lead to avoid model flip-flop artifacts in line traces.
+    if selected_model == "All models":
+        if not conv_selected_df.empty:
+            conv_selected_df = (
+                conv_selected_df.groupby(["station_id", "target_time", "lead_hours"], as_index=False)
+                .agg(
+                    fetched_at=("fetched_at", "max"),
+                    forecast_temp_c=("forecast_temp_c", "mean"),
+                    actual_temp_c=("actual_temp_c", "mean"),
+                    error_c=("error_c", "mean"),
+                )
+            )
+        if not conv_all_stations_df.empty:
+            conv_all_stations_df = (
+                conv_all_stations_df.groupby(["station_id", "target_time", "lead_hours"], as_index=False)
+                .agg(
+                    fetched_at=("fetched_at", "max"),
+                    forecast_temp_c=("forecast_temp_c", "mean"),
+                    actual_temp_c=("actual_temp_c", "mean"),
+                    error_c=("error_c", "mean"),
+                )
+            )
+
     if not conv_all_stations_df.empty:
         # -- Error distributions --
         st.subheader("Forecast error by lead time")
         st.caption(
             "error = forecast − actual (°C). This chart follows your selected station/model/date filters."
         )
+        if selected_model == "All models":
+            st.caption("Model handling: combined across models by averaging each station/target/lead point.")
 
         bin_hours = st.select_slider(
             "Lead time bucket size (hours)", options=[6, 12, 24, 48], value=24,
@@ -513,6 +540,8 @@ with tab_convergence:
 
         # -- Convergence toward actual --
         st.subheader("Forecast convergence toward the actual — all stations")
+        if selected_model == "All models":
+            st.caption("Model handling: combined across models by averaging each station/target/lead point.")
 
         counts, max_vintages = analysis.target_time_completeness(conv_all_stations_df)
         complete_times = counts.loc[counts["is_complete"], "target_time"]
