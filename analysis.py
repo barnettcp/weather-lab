@@ -36,6 +36,71 @@ def load_joined(conn):
     return df
 
 
+def station_name_for_id(station_id):
+    """Return a human-readable station name when known."""
+    if station_id is None:
+        return "Unknown"
+    lookup = {station["id"]: station.get("name", station["id"]) for station in config.STATIONS}
+    return lookup.get(station_id, station_id)
+
+
+def apply_filters(df, station_id=None, model=None):
+    """Return a filtered copy of joined data for a station/model selection."""
+    if df is None or df.empty:
+        return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+    filtered = df.copy()
+    if station_id is not None and station_id not in (None, "All stations"):
+        filtered = filtered[filtered["station_id"] == station_id]
+    if model is not None and model not in (None, "All models"):
+        filtered = filtered[filtered["model"] == model]
+    return filtered
+
+
+def station_error_summary(df, lead_hours_target=24, tolerance=12):
+    """Summarize mean bias and MAE by station for a target lead time."""
+    if df is None or df.empty or "station_id" not in df.columns:
+        return pd.DataFrame(columns=["station_id", "station_name", "mean_error", "mean_abs_error", "n"])
+
+    d = df.copy()
+    d["_lead_dist"] = (d["lead_hours"] - lead_hours_target).abs()
+    d = d[d["_lead_dist"] <= tolerance]
+    if d.empty:
+        return pd.DataFrame(columns=["station_id", "station_name", "mean_error", "mean_abs_error", "n"])
+
+    best = d.loc[d.groupby(["station_id", "target_time"])["_lead_dist"].idxmin()]
+    best["abs_error_c"] = best["error_c"].abs()
+    summary = (
+        best.groupby("station_id")
+        .agg(mean_error=("error_c", "mean"), mean_abs_error=("abs_error_c", "mean"), n=("error_c", "count"))
+        .reset_index()
+    )
+    summary["station_name"] = summary["station_id"].map(station_name_for_id)
+    return summary.sort_values("mean_abs_error", ascending=False)
+
+
+def station_model_error_summary(df, lead_hours_target=24, tolerance=12):
+    """Summarize mean bias and MAE by station and model for a target lead time."""
+    if df is None or df.empty or "station_id" not in df.columns or "model" not in df.columns:
+        return pd.DataFrame(columns=["station_id", "model", "station_name", "mean_error", "mean_abs_error", "n"])
+
+    d = df.copy()
+    d["_lead_dist"] = (d["lead_hours"] - lead_hours_target).abs()
+    d = d[d["_lead_dist"] <= tolerance]
+    if d.empty:
+        return pd.DataFrame(columns=["station_id", "model", "station_name", "mean_error", "mean_abs_error", "n"])
+
+    best = d.loc[d.groupby(["station_id", "model", "target_time"])["_lead_dist"].idxmin()]
+    best["abs_error_c"] = best["error_c"].abs()
+    summary = (
+        best.groupby(["station_id", "model"])
+        .agg(mean_error=("error_c", "mean"), mean_abs_error=("abs_error_c", "mean"), n=("error_c", "count"))
+        .reset_index()
+    )
+    summary["station_name"] = summary["station_id"].map(station_name_for_id)
+    return summary.sort_values(["station_id", "model"])
+
+
 def bucket_lead_hours(df, bin_hours=24):
     """Group lead_hours into day-ish buckets, e.g. 0-24h, 24-48h, 48-72h..."""
     df = df.copy()

@@ -128,14 +128,26 @@ if health_df.empty:
 st.divider()
 
 LEAD_OPTIONS = [12, 24, 36, 48, 72, 96, 120]
+station_lookup = {station["id"]: station.get("name", station["id"]) for station in config.STATIONS}
 
-_, col_date, col_lead = st.columns([3, 1.5, 1])
+_, col_station, col_model, col_date, col_lead = st.columns([2, 1.4, 1.4, 1.2, 1])
+with col_station:
+    selected_station = st.selectbox(
+        "Station",
+        ["All stations"] + [station["id"] for station in config.STATIONS],
+        index=0,
+        format_func=lambda sid: "All stations" if sid == "All stations" else station_lookup.get(sid, sid),
+    )
+with col_model:
+    model_options = ["All models"] + sorted(df["model"].dropna().unique().tolist())
+    selected_model = st.selectbox("Model", model_options, index=0)
 with col_date:
     date_range = st.selectbox("Date range", DATE_RANGE_OPTIONS, index=0)
 with col_lead:
     selected_lead = st.selectbox("Lead time", LEAD_OPTIONS, index=1, format_func=lambda h: f"{h}h")
 
 df_filtered = filter_by_date_range(df, date_range)
+df_filtered = analysis.apply_filters(df_filtered, station_id=selected_station, model=selected_model)
 
 if df.empty:
     st.info(
@@ -143,9 +155,16 @@ if df.empty:
         "target hours have passed and `fetch_actuals.py` has run."
     )
 elif df_filtered.empty:
-    st.info(f"No data in the selected date range ({date_range}). Try 'All Time'.")
+    st.info(
+        f"No data for the selected filters: station={selected_station}, model={selected_model}, range={date_range}."
+    )
 else:
     line_df = analysis.load_actuals_vs_forecast_by_lead(df_filtered, lead_hours_target=selected_lead)
+    if selected_station == "All stations":
+        line_df = line_df.groupby("target_time", as_index=False).agg(
+            actual_temp_c=("actual_temp_c", "mean"),
+            forecast_temp_c=("forecast_temp_c", "mean"),
+        )
     if line_df.empty:
         st.info(
             f"No forecasts found near {selected_lead}h lead time. "
@@ -203,6 +222,30 @@ with tab_overview:
         "Last forecast refresh",
         last_refresh.strftime("%Y-%m-%d %H:%M") if last_refresh else "—",
     )
+
+    st.divider()
+    st.subheader(f"Station-to-station accuracy at ~{selected_lead}h lead")
+    st.caption("Mean absolute error (MAE) is the primary comparison metric; lower is better.")
+    station_summary = analysis.station_error_summary(df_filtered, lead_hours_target=selected_lead)
+    if station_summary.empty:
+        st.info("Not enough data to compare stations at this lead time. Try a different lead or widen the date range.")
+    else:
+        station_fig = px.bar(
+            station_summary,
+            x="station_name",
+            y="mean_abs_error",
+            color="station_name",
+            text_auto=".2f",
+            labels={"station_name": "Station", "mean_abs_error": "Mean absolute error (°C)"},
+        )
+        station_fig.update_layout(
+            height=320,
+            showlegend=False,
+            margin=dict(t=20, b=20),
+            xaxis_title="Station",
+            yaxis_title="Mean absolute error (°C)",
+        )
+        st.plotly_chart(station_fig, use_container_width=True)
 
     st.divider()
 
