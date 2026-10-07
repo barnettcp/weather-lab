@@ -148,3 +148,9 @@ single-model format — no response-parsing changes beyond adding the model loop
   analysis queries must include a `model` filter or aggregation.
 - `analysis.py` and `dashboard.py` are not updated in this pass and will only work
   against the single SEAW1 location until a future overhaul.
+
+---
+
+## Related ADRs
+
+- [ADR-002: Analytics & Dashboard Behavior for Multi-Station / Multi-Model Data](./ADR-002-analytics-dashboard-station-model-behavior.md)
