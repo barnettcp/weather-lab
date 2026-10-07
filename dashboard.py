@@ -129,14 +129,15 @@ st.divider()
 
 LEAD_OPTIONS = [12, 24, 36, 48, 72, 96, 120]
 station_lookup = {station["id"]: station.get("name", station["id"]) for station in config.STATIONS}
+station_options = ["All Stations (Mean)"] + [station["id"] for station in config.STATIONS]
 
 _, col_station, col_model, col_date, col_lead = st.columns([2, 1.4, 1.4, 1.2, 1])
 with col_station:
     selected_station = st.selectbox(
         "Station",
-        ["All stations"] + [station["id"] for station in config.STATIONS],
-        index=0,
-        format_func=lambda sid: "All stations" if sid == "All stations" else station_lookup.get(sid, sid),
+        station_options,
+        index=1,
+        format_func=lambda sid: "All Stations (Mean)" if sid == "All Stations (Mean)" else station_lookup.get(sid, sid),
     )
 with col_model:
     model_options = ["All models"] + sorted(df["model"].dropna().unique().tolist())
@@ -160,7 +161,7 @@ elif df_filtered.empty:
     )
 else:
     line_df = analysis.load_actuals_vs_forecast_by_lead(df_filtered, lead_hours_target=selected_lead)
-    if selected_station == "All stations":
+    if selected_station == "All Stations (Mean)":
         line_df = line_df.groupby("target_time", as_index=False).agg(
             actual_temp_c=("actual_temp_c", "mean"),
             forecast_temp_c=("forecast_temp_c", "mean"),
@@ -246,6 +247,33 @@ with tab_overview:
             yaxis_title="Mean absolute error (°C)",
         )
         st.plotly_chart(station_fig, use_container_width=True)
+
+        map_df = pd.DataFrame(config.STATIONS).copy()
+        map_df["station_name"] = map_df["id"].map(station_lookup)
+        map_df = map_df.rename(columns={"id": "station_id", "latitude": "lat", "longitude": "lon"})
+        map_df = map_df.merge(station_summary[["station_id", "mean_abs_error"]], on="station_id", how="left")
+        map_fig = px.scatter_mapbox(
+            map_df,
+            lat="lat",
+            lon="lon",
+            hover_name="station_name",
+            hover_data={"station_id": True, "mean_abs_error": ":.2f"},
+            color="mean_abs_error",
+            color_continuous_scale="Viridis",
+            size=[10 if pd.notna(v) else 6 for v in map_df["mean_abs_error"]],
+            zoom=4.5,
+            center={"lat": 47.6, "lon": -120.5},
+            opacity=0.9,
+            title="Station locations",
+            mapbox_style="open-street-map",
+        )
+        map_fig.update_layout(
+            height=360,
+            margin=dict(t=10, r=10, b=10, l=10),
+            coloraxis_colorbar=dict(title="MAE (°C)"),
+        )
+        st.plotly_chart(map_fig, use_container_width=True)
+        st.caption("Map tiles © OpenStreetMap contributors. Data shown are the configured weather-station locations in the project.")
 
     st.divider()
 

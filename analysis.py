@@ -50,7 +50,8 @@ def apply_filters(df, station_id=None, model=None):
         return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
 
     filtered = df.copy()
-    if station_id is not None and station_id not in (None, "All stations"):
+    all_station_tokens = {None, "All stations", "All Stations (Mean)", "All Station (Mean)"}
+    if station_id is not None and station_id not in all_station_tokens:
         filtered = filtered[filtered["station_id"] == station_id]
     if model is not None and model not in (None, "All models"):
         filtered = filtered[filtered["model"] == model]
