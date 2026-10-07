@@ -149,6 +149,11 @@ with col_lead:
 
 df_filtered = filter_by_date_range(df, date_range)
 df_filtered = analysis.apply_filters(df_filtered, station_id=selected_station, model=selected_model)
+df_all_stations = analysis.apply_filters(
+    filter_by_date_range(df, date_range),
+    station_id="All Stations (Mean)",
+    model=selected_model,
+)
 
 if df.empty:
     st.info(
@@ -227,7 +232,7 @@ with tab_overview:
     st.divider()
     st.subheader(f"Station-to-station accuracy at ~{selected_lead}h lead")
     st.caption("Mean absolute error (MAE) is the primary comparison metric; lower is better.")
-    station_summary = analysis.station_error_summary(df_filtered, lead_hours_target=selected_lead)
+    station_summary = analysis.station_error_summary(df_all_stations, lead_hours_target=selected_lead)
     if station_summary.empty:
         st.info("Not enough data to compare stations at this lead time. Try a different lead or widen the date range.")
     else:
@@ -252,14 +257,21 @@ with tab_overview:
         map_df["station_name"] = map_df["id"].map(station_lookup)
         map_df = map_df.rename(columns={"id": "station_id", "latitude": "lat", "longitude": "lon"})
         map_df = map_df.merge(station_summary[["station_id", "mean_abs_error"]], on="station_id", how="left")
+        station_palette = {
+            station_lookup[station["id"]]: color
+            for station, color in zip(
+                config.STATIONS,
+                ["#3498db", "#e67e22", "#9b59b6", "#e74c3c", "#2ecc71", "#1f77b4"],
+            )
+        }
         map_fig = px.scatter_mapbox(
             map_df,
             lat="lat",
             lon="lon",
             hover_name="station_name",
             hover_data={"station_id": True, "mean_abs_error": ":.2f"},
-            color="mean_abs_error",
-            color_continuous_scale="Viridis",
+            color="station_name",
+            color_discrete_map=station_palette,
             size=[10 if pd.notna(v) else 6 for v in map_df["mean_abs_error"]],
             zoom=4.5,
             center={"lat": 47.6, "lon": -120.5},
@@ -270,10 +282,12 @@ with tab_overview:
         map_fig.update_layout(
             height=360,
             margin=dict(t=10, r=10, b=10, l=10),
-            coloraxis_colorbar=dict(title="MAE (°C)"),
         )
         st.plotly_chart(map_fig, use_container_width=True)
-        st.caption("Map tiles © OpenStreetMap contributors. Data shown are the configured weather-station locations in the project.")
+        st.caption(
+            "Map tiles © OpenStreetMap contributors. "
+            "Pins always show all configured weather stations; hover to view station MAE."
+        )
 
     st.divider()
 

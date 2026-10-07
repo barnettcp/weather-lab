@@ -28,7 +28,9 @@ def load_joined(conn):
             a.temperature_c   AS actual_temp_c,
             a.station_id
         FROM forecasts f
-        JOIN actuals a ON a.observed_time = f.target_time
+        JOIN actuals a
+          ON a.observed_time = f.target_time
+         AND a.station_id = f.station_id
         ORDER BY f.target_time, f.lead_hours
     """
     df = pd.read_sql_query(query, conn, parse_dates=["fetched_at", "target_time"])
@@ -371,7 +373,9 @@ def get_data_extents(conn):
                MAX(f.target_time) AS last_time,
                COUNT(DISTINCT f.target_time) AS matched_hours
         FROM forecasts f
-        JOIN actuals a ON a.observed_time = f.target_time
+        JOIN actuals a
+          ON a.observed_time = f.target_time
+         AND a.station_id = f.station_id
         """
     ).fetchone()
 
