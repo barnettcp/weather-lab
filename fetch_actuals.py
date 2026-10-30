@@ -107,27 +107,28 @@ def to_hourly_rows(features, station_id):
 
 
 def main():
-    db.init_db()
-    started_at = datetime.now(timezone.utc)
-    end = started_at
-    start = end - timedelta(hours=config.ACTUALS_LOOKBACK_HOURS)
+    with db.process_lock("fetch_actuals"):
+        db.init_db()
+        started_at = datetime.now(timezone.utc)
+        end = started_at
+        start = end - timedelta(hours=config.ACTUALS_LOOKBACK_HOURS)
 
-    for station in config.STATIONS:
-        station_id = station["id"]
-        try:
-            features = fetch_observations(station_id, start, end)
-        except requests.RequestException as e:
-            print(f"[fetch_actuals] ERROR {station_id}: {e}", file=sys.stderr)
-            db.insert_fetch_log("actuals", started_at.isoformat(), "error",
-                                0, str(e), station_id)
-            continue
+        for station in config.STATIONS:
+            station_id = station["id"]
+            try:
+                features = fetch_observations(station_id, start, end)
+            except requests.RequestException as e:
+                print(f"[fetch_actuals] ERROR {station_id}: {e}", file=sys.stderr)
+                db.insert_fetch_log("actuals", started_at.isoformat(), "error",
+                                    0, str(e), station_id)
+                continue
 
-        rows = to_hourly_rows(features, station_id)
-        inserted = db.insert_actuals(rows)
-        db.insert_fetch_log("actuals", started_at.isoformat(), "success",
-                             inserted, station_id=station_id)
-        print(f"[fetch_actuals] {station_id}: {len(features)} raw obs "
-              f"-> {len(rows)} hourly rows, {inserted} inserted/updated.")
+            rows = to_hourly_rows(features, station_id)
+            inserted = db.insert_actuals(rows)
+            db.insert_fetch_log("actuals", started_at.isoformat(), "success",
+                                 inserted, station_id=station_id)
+            print(f"[fetch_actuals] {station_id}: {len(features)} raw obs "
+                  f"-> {len(rows)} hourly rows, {inserted} inserted/updated.")
 
 
 if __name__ == "__main__":
