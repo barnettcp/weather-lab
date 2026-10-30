@@ -77,26 +77,27 @@ def to_rows(payload, fetched_at, station, model):
 
 
 def main():
-    db.init_db()
-    fetched_at = datetime.now(timezone.utc)
+    with db.process_lock("fetch_forecast"):
+        db.init_db()
+        fetched_at = datetime.now(timezone.utc)
 
-    for station in config.STATIONS:
-        for model in config.FORECAST_MODELS:
-            try:
-                payload = fetch_forecast(station, model)
-            except requests.RequestException as e:
-                print(f"[fetch_forecast] ERROR {station['id']}/{model}: {e}",
-                      file=sys.stderr)
-                db.insert_fetch_log("forecast", fetched_at.isoformat(), "error",
-                                    0, str(e), station["id"])
-                continue
+        for station in config.STATIONS:
+            for model in config.FORECAST_MODELS:
+                try:
+                    payload = fetch_forecast(station, model)
+                except requests.RequestException as e:
+                    print(f"[fetch_forecast] ERROR {station['id']}/{model}: {e}",
+                          file=sys.stderr)
+                    db.insert_fetch_log("forecast", fetched_at.isoformat(), "error",
+                                        0, str(e), station["id"])
+                    continue
 
-            rows = to_rows(payload, fetched_at, station, model)
-            inserted = db.insert_forecasts(rows)
-            db.insert_fetch_log("forecast", fetched_at.isoformat(), "success",
-                                 inserted, station_id=station["id"])
-            print(f"[fetch_forecast] {station['id']}/{model}: "
-                  f"{len(rows)} hourly points, {inserted} new rows.")
+                rows = to_rows(payload, fetched_at, station, model)
+                inserted = db.insert_forecasts(rows)
+                db.insert_fetch_log("forecast", fetched_at.isoformat(), "success",
+                                     inserted, station_id=station["id"])
+                print(f"[fetch_forecast] {station['id']}/{model}: "
+                      f"{len(rows)} hourly points, {inserted} new rows.")
 
 
 if __name__ == "__main__":

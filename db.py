@@ -4,10 +4,21 @@ the dashboard. Everything is stored in UTC as ISO-8601 strings
 (e.g. "2026-07-19T14:00:00+00:00") so comparisons/joins are unambiguous.
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
 
 import config
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX fallback
+    msvcrt = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS forecasts (
@@ -77,6 +88,39 @@ def get_conn():
         conn.commit()
     finally:
         conn.close()
+
+
+@contextmanager
+def process_lock(name):
+    """Prevent overlapping fetch jobs from running at the same time."""
+    lock_dir = os.path.dirname(config.DB_PATH)
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_path = os.path.join(lock_dir, f".{name}.lock")
+    lock_file = open(lock_path, "a+b")
+
+    try:
+        if os.name == "nt" and msvcrt is not None:
+            try:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                raise RuntimeError(f"Another {name} job is already running.") from exc
+        elif fcntl is not None:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError(f"Another {name} job is already running.") from exc
+        else:
+            raise RuntimeError("File locking is not supported on this platform.")
+
+        yield
+    finally:
+        try:
+            if os.name == "nt" and msvcrt is not None:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            elif fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
 
 
 def init_db():
