@@ -68,8 +68,10 @@ CREATE INDEX IF NOT EXISTS idx_fetch_log_started ON fetch_log(started_at);
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         yield conn
         conn.commit()
